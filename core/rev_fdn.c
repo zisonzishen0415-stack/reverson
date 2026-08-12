@@ -45,7 +45,7 @@ void rev_fdn_process(RevFdn* f, float in, float* out_l, float* out_r) {
 
     f->lfo_phase += f->lfo_inc;
     if (f->lfo_phase > 1.0f) f->lfo_phase -= 1.0f;
-    float tri = 2.0f * f->lfo_phase - 1.0f;  /* -1..1 */
+    float tri = 1.0f - 4.0f * rev_absf(f->lfo_phase - 0.5f);  /* true triangle, no jump at wrap */
 
     float l = 0.0f, r = 0.0f;
     for (int i = 0; i < REV_FDN_LINES; ++i) {

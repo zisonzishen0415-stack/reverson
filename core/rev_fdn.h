@@ -22,6 +22,7 @@ typedef struct {
     float out_gain;
 } RevFdn;
 
+/* len_pow2[] entries must each be a power of two and >= 32 (headroom for the LFO read-delay shift). */
 void rev_fdn_init(RevFdn* f, float* mem, const uint32_t* len_pow2, float sample_rate);
 void rev_fdn_clear(RevFdn* f);
 /* decay/tone/mod in [0,1] */
