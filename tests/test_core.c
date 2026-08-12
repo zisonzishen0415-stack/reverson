@@ -12,6 +12,8 @@ int main(void) {
     CHECK(mem != NULL);
     Reverson* r = Reverson_init(mem, need, 44100.0f);
     CHECK(r != NULL);
+    /* boundary: undersized caller buffer must be rejected, not overrun */
+    CHECK(Reverson_init(mem, need - 1u, 44100.0f) == NULL);
 
     CHECK(Reverson_get_param(r, REVERSON_PARAM_MIX) > 0.5f);
     CHECK(Reverson_get_param(r, REVERSON_PARAM_DECAY) == 0.6f);
@@ -56,6 +58,69 @@ int main(void) {
         Reverson_process(r, in, &l, &rr);
         CHECK(l == l && rr == rr);
     }
+
+    /* wet bus stays bounded even at sat=0 / decay=1 (always-on limiter) */
+    Reverson_reset(r);
+    Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_GATE, 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_DECAY, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_SAT, 0.0f);
+    float wpeak = 0.0f;
+    for (int blk = 0; blk < 8; ++blk) {
+        float dc = (blk & 1u) ? -1.0f : 1.0f;
+        for (int i = 0; i < 8820; ++i) {
+            Reverson_process(r, dc, &l, &rr);
+            if (rev_absf(l) > wpeak) wpeak = rev_absf(l);
+            if (rev_absf(rr) > wpeak) wpeak = rev_absf(rr);
+        }
+    }
+    CHECK(wpeak < 1.01f);
+
+    /* width=0 collapses to mono exactly (settle the width smoothing first) */
+    Reverson_reset(r);
+    Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_WIDTH, 0.0f);
+    for (int i = 0; i < 8820; ++i) {
+        float in = (i % 220 == 0) ? 0.8f : 0.0f;
+        Reverson_process(r, in, &l, &rr); /* settle: cur.width -> 0 */
+    }
+    float wdiff = 0.0f;
+    for (int i = 0; i < 8820; ++i) {
+        float in = (i % 220 == 0) ? 0.8f : 0.0f;
+        Reverson_process(r, in, &l, &rr);
+        if (rev_absf(l - rr) > wdiff) wdiff = rev_absf(l - rr);
+    }
+    CHECK(wdiff == 0.0f);
+
+    /* reset -> silence stays silent */
+    Reverson_reset(r);
+    for (int i = 0; i < 100; ++i) {
+        Reverson_process(r, 0.0f, &l, &rr);
+        CHECK(l == 0.0f && rr == 0.0f);
+    }
+
+    /* gate mutes wet while playing; tail rings in the gap */
+    Reverson_reset(r);
+    Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
+    for (int i = 0; i < 5000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* settle */
+    float gpeak = 0.0f;
+    for (int i = 0; i < 2000; ++i) {
+        Reverson_process(r, 1.0f, &l, &rr);
+        if (rev_absf(l) > gpeak) gpeak = rev_absf(l);
+        if (rev_absf(rr) > gpeak) gpeak = rev_absf(rr);
+    }
+    CHECK(gpeak < 0.05f);
+    for (int i = 0; i < 30000; ++i) Reverson_process(r, 0.0f, &l, &rr);
+    float gtail = 0.0f;
+    for (int i = 0; i < 10000; ++i) {
+        Reverson_process(r, 0.0f, &l, &rr);
+        if (rev_absf(l) > gtail) gtail = rev_absf(l);
+        if (rev_absf(rr) > gtail) gtail = rev_absf(rr);
+    }
+    CHECK(gtail > 0.001f);
 
     free(mem);
     if (fails == 0) { printf("test_core PASS\n"); return 0; }

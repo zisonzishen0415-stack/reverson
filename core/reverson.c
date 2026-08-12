@@ -69,6 +69,8 @@ void Reverson_reset(Reverson* r) {
     rev_rev_clear(&r->rev);
     rev_fdn_clear(&r->fdn);
     r->env.env = 0.0f;
+    r->env.onset_env = 0.0f;
+    r->env.onset = 0;
     r->env.was_playing = 0;
     r->duck_gain_sm = 1.0f;
     r->wet_lp_l = 0.0f;
@@ -150,12 +152,9 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     wet_l = r->wet_lp_l;
     wet_r = r->wet_lp_r;
 
-    float s = r->cur.sat;
-    if (s > 0.001f) {
-        float drive = 1.0f + 3.0f * s;
-        wet_l = rev_softclip(wet_l * drive);
-        wet_r = rev_softclip(wet_r * drive);
-    }
+    float drive = 1.0f + 3.0f * r->cur.sat;
+    wet_l = rev_softclip(wet_l * drive);
+    wet_r = rev_softclip(wet_r * drive);
 
     float mid = (wet_l + wet_r) * 0.5f;
     float side = (wet_l - wet_r) * 0.5f;
