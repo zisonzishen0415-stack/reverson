@@ -48,19 +48,31 @@ int main(void) {
     for (int i = 0; i < 88200; ++i) rev_env_process(&e, 0.0f);  /* 2 s */
     CHECK(rev_env_value(&e) < 0.001f);
 
-    /* threshold boundary: sub-threshold level never triggers an onset */
+    /* absolute floor: sub-floor level never triggers an onset */
     rev_env_init(&e, 44100.0f);
     for (int i = 0; i < 1000; ++i) rev_env_process(&e, 0.005f);
     CHECK(rev_env_onset(&e) == 0);
 
-    /* just above threshold triggers exactly one onset */
+    /* above the floor triggers exactly one onset */
     rev_env_init(&e, 44100.0f);
     int boundary_onsets = 0;
     for (int i = 0; i < 1000; ++i) {
-        rev_env_process(&e, 0.0105f);
+        rev_env_process(&e, 0.05f);
         boundary_onsets += rev_env_onset(&e);
     }
     CHECK(boundary_onsets == 1);
+
+    /* relative threshold: a note far below 35% of the recent peak does NOT
+       re-trigger (level-independent trigger) */
+    rev_env_init(&e, 44100.0f);
+    for (int i = 0; i < 1000; ++i) rev_env_process(&e, 1.0f);
+    for (int i = 0; i < 4410; ++i) rev_env_process(&e, 0.0f);  /* release */
+    int quiet_onsets = 0;
+    for (int i = 0; i < 1000; ++i) {
+        rev_env_process(&e, 0.1f);   /* ~10% of the 1.0 peak, below 35% */
+        quiet_onsets += rev_env_onset(&e);
+    }
+    CHECK(quiet_onsets == 0);
 
     if (fails == 0) { printf("test_env PASS\n"); return 0; }
     printf("test_env FAILED (%d)\n", fails);

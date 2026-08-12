@@ -5,7 +5,7 @@
  *   <prefix>_dry.wav
  *   <prefix>_<preset>.wav   for each preset (or one named preset)
  *
- * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold]
+ * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak]
  *   loops  - number of loop passes (default 2)
  *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady, short, tight, gated, rev (default: all)
  *
@@ -141,7 +141,7 @@ static float peak_of(const float* x, unsigned n) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold]\n");
+        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak]\n");
         return 1;
     }
     Audio a;
@@ -151,11 +151,15 @@ int main(int argc, char** argv) {
     const char* filter = argc > 4 ? argv[4] : NULL;
     int cold = (argc > 5 && strcmp(argv[5], "cold") == 0);
     if (cold) loops = 1;
+    float input_peak = 0.25f;                 /* normalize input to this peak */
+    if (argc > 6) input_peak = (float)atof(argv[6]);
+    if (input_peak < 0.01f) input_peak = 0.01f;
+    if (input_peak > 0.9f) input_peak = 0.9f;
 
-    /* normalize to peak 0.25 */
+    /* normalize to the requested input peak */
     float src_peak = peak_of(a.mono, a.n);
     if (src_peak > 1e-6f) {
-        float g = 0.25f / src_peak;
+        float g = input_peak / src_peak;
         for (unsigned i = 0; i < a.n; ++i) a.mono[i] *= g;
     }
 
