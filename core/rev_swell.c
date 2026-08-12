@@ -17,9 +17,24 @@ static const float TAP_GAIN[REV_SWELL_TAPS] = {
     0.1526f, 0.1907f, 0.2384f, 0.2980f, 0.3725f, 0.4657f
 };
 
-void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2, float sample_rate) {
+void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2,
+                    float* diff_mem, uint32_t diff_len_pow2, float sample_rate) {
     rev_delay_init(&s->line, mem, len_pow2);
     rev_delay_clear(&s->line);           /* zero caller memory */
+    for (int st = 0; st < 2; ++st) {
+        for (int ch = 0; ch < 2; ++ch) {
+            rev_delay_init(&s->diff[st][ch], diff_mem, diff_len_pow2);
+            rev_delay_clear(&s->diff[st][ch]);
+            diff_mem += diff_len_pow2;
+        }
+    }
+    /* mutually-prime delays so the feedback echo train never locks into a
+       single periodic comb; feedback ~0.5 fills the gaps between taps with
+       a ~100 ms diffusion tail (0.5^9 ~ -54 dB). */
+    s->diff_d[0] = 331u;
+    s->diff_d[1] = 463u;
+    s->diff_fb[0] = 0.50f;
+    s->diff_fb[1] = 0.45f;
     s->sample_rate = sample_rate;
     s->samples_per_ms = sample_rate * 0.001f;
     for (int i = 0; i < REV_SWELL_TAPS; ++i) {
@@ -44,6 +59,9 @@ void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2, float sample_rat
 
 void rev_swell_clear(RevSwell* s) {
     rev_delay_clear(&s->line);
+    for (int st = 0; st < 2; ++st)
+        for (int ch = 0; ch < 2; ++ch)
+            rev_delay_clear(&s->diff[st][ch]);
     memset(s->ap, 0, sizeof(s->ap));
 }
 
@@ -64,9 +82,19 @@ void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r) {
         l += v * (s->base_gain_l[i] * s->amount);
         r += v * (s->base_gain_r[i] * s->amount);
     }
-    /* cascaded one-pole allpass diffusers (multiply/add only, unit magnitude) */
+    /* Feedback diffusion (Freeverb-style allpass): fills the gaps between
+       taps so the swell reads as reverb, not a discrete echo line. Each tap
+       becomes a decaying echo train; y = -x + buf[n-D], buf[n] = x + fb*buf[n-D]. */
     for (int ch = 0; ch < 2; ++ch) {
         float x = (ch == 0) ? l : r;
+        for (int st = 0; st < 2; ++st) {
+            RevDelay* d = &s->diff[st][ch];
+            float bufout = rev_delay_read(d, s->diff_d[st]);   /* buf[n-D] */
+            float y = -x + bufout;
+            rev_delay_write(d, x + s->diff_fb[st] * bufout);   /* buf[n] */
+            x = y;
+        }
+        /* cascaded one-pole allpass smears (unit magnitude, no boost) */
         for (int st = 0; st < 3; ++st) {
             float g = s->ap_g[st];
             float y = -g * x + s->ap[ch][st][0] + g * s->ap[ch][st][1];

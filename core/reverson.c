@@ -37,7 +37,7 @@ struct Reverson {
 uint32_t Reverson_state_size(float sample_rate) {
     (void)sample_rate;   /* fixed-size state (ZDL-style caller memory) */
     return (uint32_t)(sizeof(Reverson) +
-                      (REV_FDN_TOTAL_SAMPLES + REV_SWELL_BUF_LEN) * sizeof(float) + 64u);
+                      (REV_FDN_TOTAL_SAMPLES + REV_SWELL_BUF_LEN + REV_SWELL_DIFF_TOTAL) * sizeof(float) + 64u);
 }
 
 Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
@@ -55,7 +55,8 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
         };
         rev_fdn_init(&r->fdn, p, fdn_pow2, sample_rate);
     }
-    rev_swell_init(&r->swell, p + REV_FDN_TOTAL_SAMPLES, REV_SWELL_BUF_LEN, sample_rate);
+    rev_swell_init(&r->swell, p + REV_FDN_TOTAL_SAMPLES, REV_SWELL_BUF_LEN,
+                   p + REV_FDN_TOTAL_SAMPLES + REV_SWELL_BUF_LEN, REV_SWELL_DIFF_LEN, sample_rate);
 
     /* defaults tuned toward DIIV-style clean+spacious */
     r->target.mix = 0.55f;

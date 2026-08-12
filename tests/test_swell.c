@@ -22,8 +22,9 @@ static float peak_window(const float* out_l, const float* out_r, int lo, int hi)
 
 int main(void) {
     float mem[REV_SWELL_BUF_LEN];
+    float diff_mem[2u * 2u * REV_SWELL_DIFF_LEN];
     RevSwell s;
-    rev_swell_init(&s, mem, REV_SWELL_BUF_LEN, 44100.0f);
+    rev_swell_init(&s, mem, REV_SWELL_BUF_LEN, diff_mem, REV_SWELL_DIFF_LEN, 44100.0f);
     rev_swell_set(&s, 0.3333333f, 1.0f);   /* scale 1.0 */
 
     /* impulse -> ZERO predelay: silence until the first tap (~8 ms = 353 smp) */
@@ -53,6 +54,17 @@ int main(void) {
     float ldiff = 0.0f;
     for (int i = 340; i < 10100; ++i) ldiff += rev_absf(out_l[i] - out_r[i]);
     CHECK(ldiff > 0.01f);
+
+    /* feedback diffusion: after the last tap (~9878) the echoes decay over
+       ~100 ms instead of stopping abruptly -> the swell reads as reverb */
+    float tail = 0.0f;
+    for (int i = 10100; i < 15000; ++i) tail += rev_absf(out_l[i]) + rev_absf(out_r[i]);
+    CHECK(tail > 0.01f);
+    /* and the tail decays: late half is quieter than the early half */
+    float tailA = 0.0f, tailB = 0.0f;
+    for (int i = 10100; i < 12500; ++i) tailA += rev_absf(out_l[i]) + rev_absf(out_r[i]);
+    for (int i = 12500; i < 15000; ++i) tailB += rev_absf(out_l[i]) + rev_absf(out_r[i]);
+    CHECK(tailA > tailB);
 
     /* amount=0 -> silence */
     rev_swell_clear(&s);

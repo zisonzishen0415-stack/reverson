@@ -8,6 +8,10 @@
 /* Power-of-two delay line. Max tap at scale 2.0 (revlen=1) is 2*~224 ms
    ~= 19744 samples @44k1 / 21491 @48k, so 32768 leaves headroom. */
 #define REV_SWELL_BUF_LEN 32768u
+/* Feedback diffuser delay lines (Freeverb-style allpasses, 1024 each).
+   2 stages x 2 channels -> 4096 floats of extra state. */
+#define REV_SWELL_DIFF_LEN 1024u
+#define REV_SWELL_DIFF_TOTAL (2u * 2u * REV_SWELL_DIFF_LEN)
 
 /* Classic reverse reverb, no non-causal buffering:
    a delay line with 13 read heads at exponentially increasing delays
@@ -19,6 +23,9 @@
    envelope ramp. */
 typedef struct {
     RevDelay line;
+    RevDelay diff[2][2];      /* [stage][channel] feedback allpass lines */
+    uint32_t diff_d[2];       /* allpass delays in samples (mutually prime) */
+    float diff_fb[2];         /* allpass feedback gains */
     float sample_rate;
     float samples_per_ms;
     uint32_t base_delay[REV_SWELL_TAPS];   /* samples at scale 1.0 */
@@ -32,7 +39,8 @@ typedef struct {
     float out_gain;
 } RevSwell;
 
-void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2, float sample_rate);
+void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2,
+                    float* diff_mem, uint32_t diff_len_pow2, float sample_rate);
 void rev_swell_clear(RevSwell* s);
 /* revlen/amount in [0,1]: revlen scales the tap span, amount scales tap gain */
 void rev_swell_set(RevSwell* s, float revlen, float amount);
