@@ -1,0 +1,9 @@
+﻿# Third-party clones (re-clone on demand)
+/Zoom-Firmware-Editor/
+/zoom-ms-utility/
+/ZoomMultistompZDL/
+# Build outputs (later)
+/build/
+/dist/
+*.obj
+*.o
