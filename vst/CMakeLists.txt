@@ -11,7 +11,7 @@ else()
 endif()
 
 juce_add_plugin(ReversonVST
-    VENDOR_NAME "Reverson"
+    COMPANY_NAME "Reverson"
     VERSION 1.0.0
     PLUGIN_MANUFACTURER_CODE Revs
     PLUGIN_CODE Revn

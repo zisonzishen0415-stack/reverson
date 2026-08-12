@@ -15,6 +15,7 @@ ReversonAudioProcessor::createParameterLayout() {
     add("revlen", "RevLen", 0.40f);
     add("duck", "Duck", 0.50f);
     add("gate", "Gate", 0.00f);
+    layout.add(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     return layout;
 }
 
@@ -38,14 +39,17 @@ void ReversonAudioProcessor::releaseResources() {
 
 void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
-    if (core == nullptr) { buffer.clear(); return; }
-
     auto* pMix = apvts.getRawParameterValue("mix");
     auto* pDecay = apvts.getRawParameterValue("decay");
     auto* pTone = apvts.getRawParameterValue("tone");
     auto* pRevLen = apvts.getRawParameterValue("revlen");
     auto* pDuck = apvts.getRawParameterValue("duck");
     auto* pGate = apvts.getRawParameterValue("gate");
+    auto* pBypass = apvts.getRawParameterValue("bypass");
+
+    if (core == nullptr) { buffer.clear(); return; }
+    if (*pBypass > 0.5f) return;  /* bypass: dry passthrough (VST3 processes in place) */
+
     Reverson_set_param(core, REVERSON_PARAM_MIX, *pMix);
     Reverson_set_param(core, REVERSON_PARAM_DECAY, *pDecay);
     Reverson_set_param(core, REVERSON_PARAM_TONE, *pTone);

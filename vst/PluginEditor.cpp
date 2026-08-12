@@ -21,6 +21,11 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
     pageButton.onClick = [this] { setPage(currentPage ^ 1); };
     addAndMakeVisible(pageButton);
 
+    bypassButton.setButtonText("BYPASS");
+    addAndMakeVisible(bypassButton);
+    bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        processor.apvts, "bypass", bypassButton);
+
     for (int i = 0; i < 3; ++i) {
         knobs[i].setSliderStyle(juce::Slider::RotaryVerticalDrag);
         knobs[i].setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 16);
@@ -56,5 +61,7 @@ void ReversonAudioProcessorEditor::resized() {
         knobLabels[i].setBounds(k.removeFromTop(22));
         knobs[i].setBounds(k.reduced(8));
     }
-    pageButton.setBounds(area.removeFromTop(32).withSizeKeepingCentre(64, 26));
+    auto bottom = area.removeFromTop(32);
+    pageButton.setBounds(bottom.removeFromLeft(bottom.getWidth() / 2).withSizeKeepingCentre(64, 26));
+    bypassButton.setBounds(bottom.withSizeKeepingCentre(80, 26));
 }
