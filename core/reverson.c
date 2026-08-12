@@ -14,6 +14,8 @@ struct Reverson {
     RevRev rev;
     RevFdn fdn;
     float duck_gain_sm;
+    float gate_gain_sm;         /* output gate smoother (gated reverse) */
+    float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
     float wet_bl_l, wet_bl_r;   /* bass low-shelf one-pole state */
     uint32_t rev_len_max;
@@ -63,6 +65,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     r->duck_gain_sm = 1.0f;
+    r->gate_gain_sm = 1.0f;
     r->rev_cross_samples = (uint32_t)(0.004f * sample_rate);
     Reverson_reset(r);
     return r;
@@ -76,6 +79,8 @@ void Reverson_reset(Reverson* r) {
     r->env.onset = 0;
     r->env.was_playing = 0;
     r->duck_gain_sm = 1.0f;
+    r->gate_gain_sm = 1.0f;
+    r->env_peak = 0.0f;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
@@ -146,14 +151,16 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     float rev_sig = rev_rev_process(&r->rev);
 
     float env = rev_env_value(&r->env);
-    float duck_gain = 1.0f - r->cur.duck * env;
+    /* level-independent dynamics: duck/gate use env relative to a slow peak,
+       so the same settings behave the same at any input level (pedal reality) */
+    if (env > r->env_peak) r->env_peak = env;
+    else r->env_peak *= 0.99997f;   /* ~0.65 s decay @44k1 */
+    if (r->env_peak < 1e-4f) r->env_peak = 1e-4f;
+    float env_n = env / r->env_peak;
+    if (env_n > 1.0f) env_n = 1.0f;
+    float duck_gain = 1.0f - r->cur.duck * env_n;
     if (duck_gain < 0.0f) duck_gain = 0.0f;
     if (duck_gain > 1.0f) duck_gain = 1.0f;
-    if (r->cur.gate > 0.01f) {
-        float th = 0.05f + 0.5f * r->cur.gate;
-        float g = (env < th) ? 1.0f : 0.0f;
-        duck_gain *= g;
-    }
     r->duck_gain_sm += (duck_gain - r->duck_gain_sm) * c;
     float wet_in = rev_sig * r->duck_gain_sm;
 
@@ -186,6 +193,22 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     float side = (wet_l - wet_r) * 0.5f;
     wet_l = mid + side * r->cur.width;
     wet_r = mid - side * r->cur.width;
+
+    /* gate on the reverb OUTPUT: the whole wet (reverse swell + FDN tail)
+       sounds only in the gaps, and is cut while the source is playing.
+       That is the classic gated-reverse character (input-side gating only
+       stopped new feed and let the tail ring over the notes -> smear). */
+    {
+        float gate_gain = 1.0f;
+        if (r->cur.gate > 0.01f) {
+            float th = 0.05f + 0.5f * r->cur.gate;
+            gate_gain = (env_n < th) ? 1.0f : 0.0f;
+        }
+        float gtc = rev_coeff_from_tc(0.02f * r->sample_rate); /* ~20 ms, click-free */
+        r->gate_gain_sm += (gate_gain - r->gate_gain_sm) * gtc;
+        wet_l *= r->gate_gain_sm;
+        wet_r *= r->gate_gain_sm;
+    }
 
     float mix = r->cur.mix;
     *out_l = in * (1.0f - mix) + wet_l * mix;

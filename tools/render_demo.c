@@ -7,7 +7,7 @@
  *
  * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold]
  *   loops  - number of loop passes (default 2)
- *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady (default: all)
+ *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady, short, tight, gated (default: all)
  *
  * Build: linked against reverson_core (see tools/CMakeLists.txt).
  */
@@ -39,6 +39,9 @@ static const Preset PRESETS[] = {
     { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f },
     { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f },
     { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.00f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f },
+    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.00f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f },
+    { "tight",   0.70f, 0.75f, 0.45f, 0.15f, 0.15f, 0.75f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f },
+    { "gated",   0.65f, 0.80f, 0.45f, 0.20f, 0.10f, 0.90f, 0.50f, 0.35f, 0.15f, 0.85f, 0.75f, 0.60f },
 };
 #define NUM_PRESETS ((unsigned)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
