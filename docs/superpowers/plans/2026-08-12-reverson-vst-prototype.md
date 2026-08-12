@@ -30,6 +30,8 @@ These amendments are authoritative for Tasks 1-8:
    ```
 5. Add warnings to `reverson_core` and all test targets: MSVC `/W4`, GCC/Clang `-Wall -Wextra`.
 6. Task 1 executed `rev_delay_read` as `idx - 1u - delay_samples` (delay 0 == just-written sample). The plan text `idx - delay_samples` was an off-by-one, corrected during execution; later tasks are consistent with this semantic.
+7. DSP sources are registered unconditionally next to `add_library(reverson_core ...)` via `target_sources(...)` — NOT inside `if(BUILD_TESTING)` (only `reverson_add_test(...)` calls are conditional). This keeps `reverson_core` self-contained for the VST target.
+8. Task 2 executed with a design fix: `RevEnv` has TWO envelopes — the main `env` (2 ms attack / 150 ms release) drives duck/gate level, and a fast `onset_env` (2 ms attack / 10 ms release) drives the onset flag so onsets re-arm between notes (per-note reverse triggering, ~46 ms re-arm). Task 2 code is authoritative over the plan text.
 ## File Structure
 
 ```
