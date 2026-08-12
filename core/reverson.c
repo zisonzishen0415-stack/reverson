@@ -15,6 +15,7 @@ struct Reverson {
     RevFdn fdn;
     float duck_gain_sm;
     float wet_lp_l, wet_lp_r;
+    float wet_bl_l, wet_bl_r;   /* bass low-shelf one-pole state */
     uint32_t rev_len_max;
     uint32_t rev_cross_samples;
 };
@@ -57,6 +58,8 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->target.mod = 0.35f;
     r->target.sat = 0.10f;
     r->target.width = 0.80f;
+    r->target.density = 0.75f;   /* 3-voice reverse wash */
+    r->target.bass = 0.55f;      /* slight low-mid body */
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     r->duck_gain_sm = 1.0f;
@@ -75,6 +78,8 @@ void Reverson_reset(Reverson* r) {
     r->duck_gain_sm = 1.0f;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
+    r->wet_bl_l = 0.0f;
+    r->wet_bl_r = 0.0f;
 }
 
 void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
@@ -90,6 +95,8 @@ void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
         case REVERSON_PARAM_MOD:   r->target.mod = v; break;
         case REVERSON_PARAM_SAT:   r->target.sat = v; break;
         case REVERSON_PARAM_WIDTH: r->target.width = v; break;
+        case REVERSON_PARAM_DENSITY:r->target.density = v; break;
+        case REVERSON_PARAM_BASS:   r->target.bass = v; break;
     }
 }
 
@@ -105,6 +112,8 @@ float Reverson_get_param(const Reverson* r, ReversonParam p) {
         case REVERSON_PARAM_MOD:   return r->target.mod;
         case REVERSON_PARAM_SAT:   return r->target.sat;
         case REVERSON_PARAM_WIDTH: return r->target.width;
+        case REVERSON_PARAM_DENSITY:return r->target.density;
+        case REVERSON_PARAM_BASS:   return r->target.bass;
     }
     return 0.0f;
 }
@@ -121,12 +130,16 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->cur.mod += (r->target.mod - r->cur.mod) * c;
     r->cur.sat += (r->target.sat - r->cur.sat) * c;
     r->cur.width += (r->target.width - r->cur.width) * c;
+    r->cur.density += (r->target.density - r->cur.density) * c;
+    r->cur.bass += (r->target.bass - r->cur.bass) * c;
 
     rev_env_process(&r->env, in);
     if (rev_env_onset(&r->env)) {
         uint32_t seg_len = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
         if (seg_len > r->rev_len_max) seg_len = r->rev_len_max;
         int sh = 1 + (int)(3.99f * r->cur.shape);
+        uint32_t voices = 1u + (uint32_t)(3.99f * r->cur.density);   /* 1..4 */
+        rev_rev_set_voices(&r->rev, voices);
         rev_rev_trigger(&r->rev, seg_len, r->rev_cross_samples, sh);
     }
     rev_rev_write(&r->rev, in);
@@ -153,6 +166,17 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->wet_lp_r += (wet_r - r->wet_lp_r) * tc;
     wet_l = r->wet_lp_l;
     wet_r = r->wet_lp_r;
+
+    /* bass low-shelf: y = x + g*lp(x); shelf gain g = (bass-0.5)*1.2 in [-0.6,+0.6].
+       One-pole lp at tc=0.04 (~300 Hz @44k1) puts body in the low-mid region. */
+    {
+        float btc = 0.04f;
+        r->wet_bl_l += (wet_l - r->wet_bl_l) * btc;
+        r->wet_bl_r += (wet_r - r->wet_bl_r) * btc;
+        float shelf_g = (r->cur.bass - 0.5f) * 1.2f;
+        wet_l += shelf_g * r->wet_bl_l;
+        wet_r += shelf_g * r->wet_bl_r;
+    }
 
     float drive = 1.0f + 3.0f * r->cur.sat;
     wet_l = rev_softclip(wet_l * drive);

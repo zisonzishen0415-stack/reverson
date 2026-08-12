@@ -15,6 +15,8 @@ ReversonAudioProcessor::createParameterLayout() {
     add("revlen", "RevLen", 0.40f);
     add("duck", "Duck", 0.50f);
     add("gate", "Gate", 0.00f);
+    add("density", "Density", 0.75f);
+    add("bass", "Bass", 0.55f);
     layout.add(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     return layout;
 }
@@ -45,6 +47,8 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     auto* pRevLen = apvts.getRawParameterValue("revlen");
     auto* pDuck = apvts.getRawParameterValue("duck");
     auto* pGate = apvts.getRawParameterValue("gate");
+    auto* pDensity = apvts.getRawParameterValue("density");
+    auto* pBass = apvts.getRawParameterValue("bass");
     auto* pBypass = apvts.getRawParameterValue("bypass");
 
     if (core == nullptr) { buffer.clear(); return; }
@@ -56,6 +60,8 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     Reverson_set_param(core, REVERSON_PARAM_REVLEN, *pRevLen);
     Reverson_set_param(core, REVERSON_PARAM_DUCK, *pDuck);
     Reverson_set_param(core, REVERSON_PARAM_GATE, *pGate);
+    Reverson_set_param(core, REVERSON_PARAM_DENSITY, *pDensity);
+    Reverson_set_param(core, REVERSON_PARAM_BASS, *pBass);
 
     const int numSamples = buffer.getNumSamples();
     const float* in = buffer.getReadPointer(0);

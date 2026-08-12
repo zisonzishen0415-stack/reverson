@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-#define REVERSON_NUM_PARAMS 10u
+#define REVERSON_NUM_PARAMS 12u
 #define REVERSON_MAX_REV_S 2.0f
 
 typedef enum {
@@ -19,11 +19,13 @@ typedef enum {
     REVERSON_PARAM_SHAPE,
     REVERSON_PARAM_MOD,
     REVERSON_PARAM_SAT,
-    REVERSON_PARAM_WIDTH
+    REVERSON_PARAM_WIDTH,
+    REVERSON_PARAM_DENSITY,
+    REVERSON_PARAM_BASS
 } ReversonParam;
 
 typedef struct {
-    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width;
+    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass;
 } ReversonParams;
 
 typedef struct Reverson Reverson;

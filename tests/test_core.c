@@ -18,6 +18,17 @@ int main(void) {
     CHECK(Reverson_get_param(r, REVERSON_PARAM_MIX) > 0.5f);
     CHECK(Reverson_get_param(r, REVERSON_PARAM_DECAY) == 0.6f);
     CHECK(Reverson_get_param(r, REVERSON_PARAM_GATE) == 0.0f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_DENSITY) == 0.75f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_BASS) == 0.55f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_SHAPE) == 0.33f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_MOD) == 0.35f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_WIDTH) == 0.80f);
+    Reverson_set_param(r, REVERSON_PARAM_DENSITY, 2.0f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_DENSITY) == 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.75f);
+    Reverson_set_param(r, REVERSON_PARAM_BASS, -1.0f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_BASS) == 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_BASS, 0.55f);
 
     Reverson_set_param(r, REVERSON_PARAM_MIX, 2.0f);
     CHECK(Reverson_get_param(r, REVERSON_PARAM_MIX) == 1.0f);
@@ -136,6 +147,29 @@ int main(void) {
         if (rev_absf(rr) > gtail) gtail = rev_absf(rr);
     }
     CHECK(gtail > 0.001f);
+
+    /* max density (4 voices) + bass boost stays bounded and finite */
+    Reverson_reset(r);
+    Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_GATE, 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.95f);
+    Reverson_set_param(r, REVERSON_PARAM_DENSITY, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_BASS, 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_SAT, 0.0f);
+    for (int i = 0; i < 95000; ++i) {
+        float in = (i % 220 == 0) ? 0.8f : 0.0f;
+        Reverson_process(r, in, &l, &rr);
+    }
+    float dpeak = 0.0f;
+    for (int i = 0; i < 17640; ++i) {
+        float in = (i % 220 == 0) ? 0.8f : 0.0f;
+        Reverson_process(r, in, &l, &rr);
+        CHECK(l == l && rr == rr);
+        if (rev_absf(l) > dpeak) dpeak = rev_absf(l);
+        if (rev_absf(rr) > dpeak) dpeak = rev_absf(rr);
+    }
+    CHECK(dpeak < 1.01f);
 
     free(mem);
     if (fails == 0) { printf("test_core PASS\n"); return 0; }

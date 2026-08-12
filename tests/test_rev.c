@@ -85,6 +85,41 @@ int main(void) {
     CLOSE(live[9], 0.0f, 0.05f);   /* segment end: env falls to 0 at the seam */
     CLOSE(live[10], live[0], 0.2f);/* wrap: segment loops, starts again */
 
+    /* multi-voice: default is 1 voice (existing single-voice behavior) */
+    CHECK(r.n_voices == 1u);
+    CHECK(r.voice_scale == 1.0f);
+    rev_rev_set_voices(&r, 9u);            /* clamps to max */
+    CHECK(r.n_voices == REV_REV_MAX_VOICES);
+    rev_rev_set_voices(&r, 0u);            /* clamps to min */
+    CHECK(r.n_voices == 1u);
+
+    /* 3-voice reverse: staggered read heads, averaged, stay finite and in
+       the same ballpark as the single voice (voice 0 reads buf[anchor-1]=9
+       at env 0.1; voices 1/2 read 6/3 at env 0.3/0.6 -> sum 4.5/3 = 1.5) */
+    rev_rev_clear(&r);
+    for (int i = 0; i < 10; ++i) rev_rev_write(&r, (float)i);
+    rev_rev_set_voices(&r, 3u);
+    rev_rev_trigger(&r, 10u, 1u, 1);
+    float mv0 = rev_rev_process(&r);
+    CHECK(is_finite_f(mv0));
+    CHECK(mv0 > 0.5f && mv0 < 3.0f);
+    float mv_peak = 0.0f;
+    for (int i = 0; i < 32; ++i) {
+        float v = rev_rev_process(&r);
+        CHECK(is_finite_f(v));
+        if (v < 0.0f) v = -v;
+        if (v > mv_peak) mv_peak = v;
+    }
+    CHECK(mv_peak < 4.0f);  /* averaged voices stay bounded */
+
+    /* back to single voice: identical first sample as the original test */
+    rev_rev_clear(&r);
+    for (int i = 0; i < 10; ++i) rev_rev_write(&r, (float)i);
+    rev_rev_set_voices(&r, 1u);
+    rev_rev_trigger(&r, 10u, 1u, 1);
+    float single0 = rev_rev_process(&r);
+    CLOSE(single0, 0.9f, 0.15f);
+
     if (fails == 0) { printf("test_rev PASS\n"); return 0; }
     printf("test_rev FAILED (%d)\n", fails);
     return 1;

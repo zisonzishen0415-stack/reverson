@@ -2,9 +2,12 @@
  * Reads a 16-bit PCM WAV (mono or stereo), normalizes, pre-warms the
  * reverse buffer with one full pass, then renders N loop passes through the
  * Reverson core. Writes stereo 16-bit WAVs:
- *   <prefix>_dry.wav      - unprocessed (mono duplicated to stereo)
- *   <prefix>_wet.wav      - DIIV-style defaults
- *   <prefix>_wet_big.wav  - more dramatic shoegaze settings
+ *   <prefix>_dry.wav
+ *   <prefix>_<preset>.wav   for each preset (or one named preset)
+ *
+ * usage: reverson_render <in.wav> <out_prefix> [loops] [preset]
+ *   loops  - number of loop passes (default 2)
+ *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense (default: all)
  *
  * Build: linked against reverson_core (see tools/CMakeLists.txt).
  */
@@ -12,15 +15,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #define MAX_SAMPLES (16u * 1024u * 1024u) /* 16M samples headroom (~6 min at 44k1) */
 
 typedef struct {
     unsigned rate;
-    unsigned ch;
     float* mono;
     unsigned n;
 } Audio;
+
+typedef struct {
+    const char* name;
+    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass;
+} Preset;
+
+static const Preset PRESETS[] = {
+    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.00f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f },
+    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f },
+    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f },
+    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.00f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f },
+    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.00f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f },
+    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f },
+    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f },
+};
+#define NUM_PRESETS ((unsigned)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
 static int read_wav(const char* path, Audio* a) {
     FILE* f = fopen(path, "rb");
@@ -69,7 +88,7 @@ static int read_wav(const char* path, Audio* a) {
         }
     }
     fclose(f);
-    a->rate = rate; a->ch = ch; a->mono = mono; a->n = n;
+    a->rate = rate; a->mono = mono; a->n = n;
     return 0;
 }
 
@@ -94,18 +113,19 @@ static int write_wav(const char* path, const float* l, const float* r, unsigned 
     return 0;
 }
 
-static void set_params(Reverson* r, float mix, float decay, float tone, float revlen,
-                       float duck, float gate, float shape, float mod, float sat, float width) {
-    Reverson_set_param(r, REVERSON_PARAM_MIX, mix);
-    Reverson_set_param(r, REVERSON_PARAM_DECAY, decay);
-    Reverson_set_param(r, REVERSON_PARAM_TONE, tone);
-    Reverson_set_param(r, REVERSON_PARAM_REVLEN, revlen);
-    Reverson_set_param(r, REVERSON_PARAM_DUCK, duck);
-    Reverson_set_param(r, REVERSON_PARAM_GATE, gate);
-    Reverson_set_param(r, REVERSON_PARAM_SHAPE, shape);
-    Reverson_set_param(r, REVERSON_PARAM_MOD, mod);
-    Reverson_set_param(r, REVERSON_PARAM_SAT, sat);
-    Reverson_set_param(r, REVERSON_PARAM_WIDTH, width);
+static void apply_preset(Reverson* r, const Preset* p) {
+    Reverson_set_param(r, REVERSON_PARAM_MIX, p->mix);
+    Reverson_set_param(r, REVERSON_PARAM_DECAY, p->decay);
+    Reverson_set_param(r, REVERSON_PARAM_TONE, p->tone);
+    Reverson_set_param(r, REVERSON_PARAM_REVLEN, p->revlen);
+    Reverson_set_param(r, REVERSON_PARAM_DUCK, p->duck);
+    Reverson_set_param(r, REVERSON_PARAM_GATE, p->gate);
+    Reverson_set_param(r, REVERSON_PARAM_SHAPE, p->shape);
+    Reverson_set_param(r, REVERSON_PARAM_MOD, p->mod);
+    Reverson_set_param(r, REVERSON_PARAM_SAT, p->sat);
+    Reverson_set_param(r, REVERSON_PARAM_WIDTH, p->width);
+    Reverson_set_param(r, REVERSON_PARAM_DENSITY, p->density);
+    Reverson_set_param(r, REVERSON_PARAM_BASS, p->bass);
 }
 
 static float peak_of(const float* x, unsigned n) {
@@ -116,13 +136,14 @@ static float peak_of(const float* x, unsigned n) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops]\n");
+        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset]\n");
         return 1;
     }
     Audio a;
     if (read_wav(argv[1], &a) != 0) return 1;
     unsigned loops = argc > 3 ? (unsigned)atoi(argv[3]) : 2u;
     if (loops < 1) loops = 1;
+    const char* filter = argc > 4 ? argv[4] : NULL;
 
     /* normalize to peak 0.25 */
     float src_peak = peak_of(a.mono, a.n);
@@ -132,80 +153,57 @@ int main(int argc, char** argv) {
     }
 
     uint32_t need = Reverson_state_size((float)a.rate);
-    void* mem1 = malloc(need);
-    void* mem2 = malloc(need);
-    void* mem3 = malloc(need);
-    void* mem4 = malloc(need);
-    if (!mem1 || !mem2 || !mem3 || !mem4) { fprintf(stderr, "alloc failed\n"); return 1; }
-    Reverson* core = Reverson_init(mem1, need, (float)a.rate);
-    Reverson* big = Reverson_init(mem2, need, (float)a.rate);
-    Reverson* only = Reverson_init(mem3, need, (float)a.rate);
-    Reverson* wash = Reverson_init(mem4, need, (float)a.rate);
-    if (!core || !big || !only || !wash) { fprintf(stderr, "init failed\n"); return 1; }
-    set_params(core, 0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.00f, 0.33f, 0.35f, 0.10f, 0.80f);
-    set_params(big,  0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.95f);
-    set_params(only, 1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.90f);
-    /* wash: short segments + heavy duck + smeared FDN -> reverb cloud, not echo */
-    set_params(wash, 0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.00f, 0.66f, 0.60f, 0.08f, 0.85f);
-
-    /* pass 0: pre-warm reverse buffers (discard output) so the render pass
-       has recorded material to replay in reverse from sample 0 */
-    for (unsigned i = 0; i < a.n; ++i) {
-        float l, r;
-        Reverson_process(core, a.mono[i], &l, &r);
-        Reverson_process(big, a.mono[i], &l, &r);
-        Reverson_process(only, a.mono[i], &l, &r);
-        Reverson_process(wash, a.mono[i], &l, &r);
-    }
-
     unsigned total = a.n * loops;
     float* dryL = (float*)malloc(total * sizeof(float));
-    float* wetL = (float*)malloc(total * sizeof(float));
-    float* wetR = (float*)malloc(total * sizeof(float));
-    float* bigL = (float*)malloc(total * sizeof(float));
-    float* bigR = (float*)malloc(total * sizeof(float));
-    float* onlyL = (float*)malloc(total * sizeof(float));
-    float* onlyR = (float*)malloc(total * sizeof(float));
-    float* washL = (float*)malloc(total * sizeof(float));
-    float* washR = (float*)malloc(total * sizeof(float));
-    if (!dryL || !wetL || !wetR || !bigL || !bigR || !onlyL || !onlyR || !washL || !washR) { fprintf(stderr, "alloc failed\n"); return 1; }
-
-    unsigned out = 0;
-    for (unsigned p = 0; p < loops; ++p) {
-        for (unsigned i = 0; i < a.n; ++i) {
-            float x = a.mono[i];
-            float wl, wr, bl, br, ol, orr, shl, shr;
-            Reverson_process(core, x, &wl, &wr);
-            Reverson_process(big, x, &bl, &br);
-            Reverson_process(only, x, &ol, &orr);
-            Reverson_process(wash, x, &shl, &shr);
-            dryL[out] = x; wetL[out] = wl; wetR[out] = wr; bigL[out] = bl; bigR[out] = br; onlyL[out] = ol; onlyR[out] = orr; washL[out] = shl; washR[out] = shr;
-            ++out;
-        }
-    }
-
-    /* normalize each render to the same peak so A/B listening is fair */
-    float norm_gain = 0.89f / peak_of(dryL, out);
-    if (norm_gain > 0.0f) {
-        for (unsigned i = 0; i < out; ++i) { dryL[i] *= norm_gain; wetL[i] *= norm_gain; wetR[i] *= norm_gain; bigL[i] *= norm_gain; bigR[i] *= norm_gain; onlyL[i] *= norm_gain; onlyR[i] *= norm_gain; washL[i] *= norm_gain; washR[i] *= norm_gain; }
-    }
+    float* L = (float*)malloc(total * sizeof(float));
+    float* R = (float*)malloc(total * sizeof(float));
+    if (!dryL || !L || !R) { fprintf(stderr, "alloc failed\n"); return 1; }
+    for (unsigned p = 0; p < loops; ++p)
+        for (unsigned i = 0; i < a.n; ++i) dryL[p * a.n + i] = a.mono[i];
+    float dry_peak = peak_of(dryL, total);
+    float norm = 0.89f / dry_peak;
 
     char path[1024];
     snprintf(path, sizeof(path), "%s_dry.wav", argv[2]);
-    write_wav(path, dryL, dryL, out, a.rate);
-    snprintf(path, sizeof(path), "%s_wet.wav", argv[2]);
-    write_wav(path, wetL, wetR, out, a.rate);
-    snprintf(path, sizeof(path), "%s_wet_big.wav", argv[2]);
-    write_wav(path, bigL, bigR, out, a.rate);
-    snprintf(path, sizeof(path), "%s_wet_only.wav", argv[2]);
-    write_wav(path, onlyL, onlyR, out, a.rate);
-    snprintf(path, sizeof(path), "%s_wash.wav", argv[2]);
-    write_wav(path, washL, washR, out, a.rate);
+    write_wav(path, dryL, dryL, total, a.rate);
+    {
+        float drms = 0.0f;
+        for (unsigned i = 0; i < total; ++i) drms += dryL[i] * dryL[i];
+        drms = (float)sqrt(drms / (float)total);
+        printf("dry: peak=%.3f rms=%.3f -> %s\n", dry_peak * norm, drms, path);
+    }
 
-    printf("rendered %u loops x %u samples @ %u Hz -> %s_{dry,wet,wet_big,wet_only,wash}.wav\n",
-           loops, a.n, a.rate, argv[2]);
-    printf("normalized src peak=%.3f | out peaks: dry=%.3f wet=%.3f big=%.3f\n",
-           src_peak, peak_of(dryL, out), peak_of(wetL, out), peak_of(bigL, out));
-    free(dryL); free(wetL); free(wetR); free(bigL); free(bigR); free(onlyL); free(onlyR); free(washL); free(washR); free(mem1); free(mem2); free(mem3); free(mem4); free(a.mono);
+    for (unsigned pi = 0; pi < NUM_PRESETS; ++pi) {
+        const Preset* pr = &PRESETS[pi];
+        if (filter && strcmp(filter, pr->name) != 0) continue;
+        void* mem = malloc(need);
+        if (!mem) { fprintf(stderr, "alloc failed\n"); return 1; }
+        Reverson* core = Reverson_init(mem, need, (float)a.rate);
+        if (!core) { fprintf(stderr, "init failed\n"); return 1; }
+        apply_preset(core, pr);
+
+        /* pre-warm reverse buffer (discard output) */
+        for (unsigned i = 0; i < a.n; ++i) {
+            float l, r; Reverson_process(core, a.mono[i], &l, &r);
+        }
+        /* render */
+        unsigned out = 0;
+        for (unsigned p = 0; p < loops; ++p)
+            for (unsigned i = 0; i < a.n; ++i) {
+                float l, r;
+                Reverson_process(core, a.mono[i], &l, &r);
+                L[out] = l; R[out] = r; ++out;
+            }
+        for (unsigned i = 0; i < out; ++i) { L[i] *= norm; R[i] *= norm; }
+        snprintf(path, sizeof(path), "%s_%s.wav", argv[2], pr->name);
+        write_wav(path, L, R, out, a.rate);
+        float rms = 0.0f;
+        for (unsigned i = 0; i < out; ++i) { float m = (L[i] + R[i]) * 0.5f; rms += m * m; }
+        rms = (float)sqrt(rms / (float)out);
+        printf("%-8s: peak=%.3f rms=%.3f -> %s\n", pr->name, peak_of(L, out), rms, path);
+        free(mem);
+    }
+
+    free(dryL); free(L); free(R); free(a.mono);
     return 0;
 }

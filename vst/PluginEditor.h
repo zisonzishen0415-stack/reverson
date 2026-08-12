@@ -21,6 +21,6 @@ private:
     juce::ToggleButton bypassButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     int currentPage = 0;
-    static const char* ids[2][3];
-    static const char* names[2][3];
+    static const char* ids[3][3];
+    static const char* names[3][3];
 };
