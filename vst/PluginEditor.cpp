@@ -1,15 +1,17 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-const char* ReversonAudioProcessorEditor::ids[3][3] = {
+const char* ReversonAudioProcessorEditor::ids[4][3] = {
     {"mix", "decay", "tone"},
     {"revlen", "duck", "gate"},
-    {"density", "bass", "shape"}
+    {"density", "bass", "shape"},
+    {"mod", "sat", "width"}
 };
-const char* ReversonAudioProcessorEditor::names[3][3] = {
+const char* ReversonAudioProcessorEditor::names[4][3] = {
     {"Mix", "Decay", "Tone"},
     {"RevLen", "Duck", "Gate"},
-    {"Density", "Bass", "Shape"}
+    {"Density", "Bass", "Shape"},
+    {"Mod", "Sat", "Width"}
 };
 
 ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcessor& p)
@@ -20,7 +22,7 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
     addAndMakeVisible(title);
 
     pageButton.setButtonText("P1");
-    pageButton.onClick = [this] { setPage((currentPage + 1) % 3); };
+    pageButton.onClick = [this] { setPage((currentPage + 1) % 4); };
     addAndMakeVisible(pageButton);
 
     bypassButton.setButtonText("BYPASS");
@@ -42,7 +44,7 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
 
 void ReversonAudioProcessorEditor::setPage(int page) {
     currentPage = page;
-    pageButton.setButtonText(page == 0 ? "P1" : (page == 1 ? "P2" : "P3"));
+    pageButton.setButtonText(page == 0 ? "P1" : (page == 1 ? "P2" : (page == 2 ? "P3" : "P4")));
     attachments[0].reset();
     attachments[1].reset();
     attachments[2].reset();

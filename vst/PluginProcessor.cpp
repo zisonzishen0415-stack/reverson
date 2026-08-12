@@ -17,6 +17,10 @@ ReversonAudioProcessor::createParameterLayout() {
     add("gate", "Gate", 0.00f);
     add("density", "Density", 0.75f);
     add("bass", "Bass", 0.55f);
+    add("shape", "Shape", 0.33f);
+    add("mod", "Mod", 0.35f);
+    add("sat", "Sat", 0.10f);
+    add("width", "Width", 0.80f);
     layout.add(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     return layout;
 }
@@ -49,6 +53,10 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     auto* pGate = apvts.getRawParameterValue("gate");
     auto* pDensity = apvts.getRawParameterValue("density");
     auto* pBass = apvts.getRawParameterValue("bass");
+    auto* pShape = apvts.getRawParameterValue("shape");
+    auto* pMod = apvts.getRawParameterValue("mod");
+    auto* pSat = apvts.getRawParameterValue("sat");
+    auto* pWidth = apvts.getRawParameterValue("width");
     auto* pBypass = apvts.getRawParameterValue("bypass");
 
     if (core == nullptr) { buffer.clear(); return; }
@@ -62,6 +70,10 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     Reverson_set_param(core, REVERSON_PARAM_GATE, *pGate);
     Reverson_set_param(core, REVERSON_PARAM_DENSITY, *pDensity);
     Reverson_set_param(core, REVERSON_PARAM_BASS, *pBass);
+    Reverson_set_param(core, REVERSON_PARAM_SHAPE, *pShape);
+    Reverson_set_param(core, REVERSON_PARAM_MOD, *pMod);
+    Reverson_set_param(core, REVERSON_PARAM_SAT, *pSat);
+    Reverson_set_param(core, REVERSON_PARAM_WIDTH, *pWidth);
 
     const int numSamples = buffer.getNumSamples();
     const float* in = buffer.getReadPointer(0);
