@@ -1,0 +1,4 @@
+add_executable(reverson_render render_demo.c)
+target_include_directories(reverson_render PRIVATE ${CMAKE_SOURCE_DIR}/core)
+target_link_libraries(reverson_render PRIVATE reverson_core)
+reverson_enable_warnings(reverson_render)

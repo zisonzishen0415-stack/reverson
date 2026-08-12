@@ -5,10 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 option(REVERSON_BUILD_VST "Build the VST3 shell" OFF)
-
-if(REVERSON_BUILD_VST)
-    add_subdirectory(vst)
-endif()
+option(REVERSON_BUILD_TOOLS "Build offline demo renderer" ON)
 
 include(CTest)
 
@@ -27,6 +24,14 @@ function(reverson_add_test name)
     reverson_enable_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
+
+if(REVERSON_BUILD_VST)
+    add_subdirectory(vst)
+endif()
+
+if(REVERSON_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
 
 add_library(reverson_core STATIC core/rev_delay.c)
 target_sources(reverson_core PRIVATE core/rev_env.c)

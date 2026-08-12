@@ -1,4 +1,4 @@
-﻿# Third-party clones (re-clone on demand)
+# Third-party clones (re-clone on demand)
 /Zoom-Firmware-Editor/
 /zoom-ms-utility/
 /ZoomMultistompZDL/
@@ -7,3 +7,6 @@
 /dist/
 *.obj
 *.o
+# Downloaded demo sources and generated renders (regenerate with reverson_render)
+/assets/
+/out/
