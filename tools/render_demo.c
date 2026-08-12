@@ -1,3 +1,7 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 /* render_demo.c - offline Reverson demo renderer.
  * Reads a 16-bit PCM WAV (mono or stereo), normalizes, pre-warms the
  * reverse buffer with one full pass, then renders N loop passes through the
@@ -5,7 +9,10 @@
  *   <prefix>_dry.wav
  *   <prefix>_<preset>.wav   for each preset (or one named preset)
  *
- * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak]
+ * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak] [key=value ...]
+ *   key=value - override any preset param after it is applied, e.g. gate=0.6
+ *               revlen=0.5 shape=0.8. Keys: mix decay tone revlen duck gate
+ *               shape mod sat width density bass
  *   loops  - number of loop passes (default 2)
  *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady, short, tight, gated, rev (default: all)
  *
@@ -141,7 +148,7 @@ static float peak_of(const float* x, unsigned n) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak]\n");
+        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak] [key=value ...]\n");
         return 1;
     }
     Audio a;
@@ -192,6 +199,28 @@ int main(int argc, char** argv) {
         Reverson* core = Reverson_init(mem, need, (float)a.rate);
         if (!core) { fprintf(stderr, "init failed\n"); return 1; }
         apply_preset(core, pr);
+        for (int oi = 7; oi < argc; ++oi) {   /* key=value param overrides */
+            char k[32]; float v = 0.0f;
+            if (sscanf(argv[oi], "%31[^=]=%f", k, &v) != 2) {
+                fprintf(stderr, "bad override '%s' (use key=value)\n", argv[oi]);
+                return 1;
+            }
+            ReversonParam par;
+            if      (strcmp(k, "mix") == 0)     par = REVERSON_PARAM_MIX;
+            else if (strcmp(k, "decay") == 0)   par = REVERSON_PARAM_DECAY;
+            else if (strcmp(k, "tone") == 0)    par = REVERSON_PARAM_TONE;
+            else if (strcmp(k, "revlen") == 0)  par = REVERSON_PARAM_REVLEN;
+            else if (strcmp(k, "duck") == 0)    par = REVERSON_PARAM_DUCK;
+            else if (strcmp(k, "gate") == 0)    par = REVERSON_PARAM_GATE;
+            else if (strcmp(k, "shape") == 0)   par = REVERSON_PARAM_SHAPE;
+            else if (strcmp(k, "mod") == 0)     par = REVERSON_PARAM_MOD;
+            else if (strcmp(k, "sat") == 0)     par = REVERSON_PARAM_SAT;
+            else if (strcmp(k, "width") == 0)   par = REVERSON_PARAM_WIDTH;
+            else if (strcmp(k, "density") == 0) par = REVERSON_PARAM_DENSITY;
+            else if (strcmp(k, "bass") == 0)    par = REVERSON_PARAM_BASS;
+            else { fprintf(stderr, "unknown param '%s'\n", k); return 1; }
+            Reverson_set_param(core, par, v);
+        }
 
         /* pre-warm reverse buffer (discard output) unless cold (live-take
            simulation starts from an empty buffer) */
