@@ -28,7 +28,8 @@ These amendments are authoritative for Tasks 1-8:
        add_test(NAME ${name} COMMAND ${name})
    endfunction()
    ```
-5. Add warnings to `reverson_core`: MSVC `/W4`, GCC/Clang `-Wall -Wextra`.
+5. Add warnings to `reverson_core` and all test targets: MSVC `/W4`, GCC/Clang `-Wall -Wextra`.
+6. Task 1 executed `rev_delay_read` as `idx - 1u - delay_samples` (delay 0 == just-written sample). The plan text `idx - delay_samples` was an off-by-one, corrected during execution; later tasks are consistent with this semantic.
 ## File Structure
 
 ```
