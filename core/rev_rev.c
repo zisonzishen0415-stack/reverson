@@ -30,19 +30,22 @@ void rev_rev_clear(RevRev* r) {
     r->norm_target = 1.0f;
     r->env = 0.0f;
     r->cross_pos = 0.0f;
+    /* seg_len/cross_len/env_inc are intentionally not reset here: the next
+       trigger (re)sets them. */
 }
 
 /* Division here is control-rate (once per trigger), not per-sample. */
 void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int shape) {
     if (seg_len < 2u) seg_len = 2u;
+    if (seg_len > r->buf_len) seg_len = r->buf_len; /* oversized segment cannot alias the buffer */
     r->seg_len = seg_len;
     r->seg_pos = 0u;
     r->env = 0.0f;
-    r->env_inc = 1.0f / (float)seg_len;
     r->cross_len = cross_samples < 1u ? 1u : cross_samples;
     if (r->cross_len > r->seg_len) r->cross_len = r->seg_len;
     r->cross_pos = 0.0f;
     r->cross_inc = 1.0f / (float)r->cross_len;
+    r->env_inc = 1.0f / (float)(r->seg_len - r->cross_len + 1u); /* rise over rise-window */
     r->shape = (shape < 1) ? 1 : ((shape > 4) ? 4 : shape);
     r->norm_target = rev_clampf(0.9f / (r->seg_peak + 1e-6f), 0.1f, 3.0f);
 }
@@ -59,19 +62,26 @@ float rev_rev_process(RevRev* r) {
     uint32_t read_idx = (r->write_idx - 1u - r->seg_pos) & r->mask;
     float rev = r->buf[read_idx];
 
-    r->env += r->env_inc;
-    if (r->env > 1.0f) r->env = 1.0f;
     float env = r->env;
-    if (r->shape == 2) env = env * env;
-    else if (r->shape == 3) env = env * env * env;
-    else if (r->shape == 4) { float e2 = env * env; env = e2 * e2; }
-
     if (r->seg_pos >= r->seg_len - r->cross_len) {
+        /* crossfade window: blend toward the segment head and let the swell
+           fall to 0 so the seam is click-free */
         uint32_t head_idx = (r->write_idx - 1u) & r->mask;
         r->cross_pos += r->cross_inc;
         if (r->cross_pos > 1.0f) r->cross_pos = 1.0f;
-        rev = rev * (1.0f - r->cross_pos) + r->buf[head_idx] * r->cross_pos;
+        float head = r->buf[head_idx];
+        rev = rev * (1.0f - r->cross_pos) + head * r->cross_pos;
+        env = env * (1.0f - r->cross_pos); /* fall to 0 at the seam */
+    } else {
+        /* segment body: swell rises toward 1 */
+        r->env += r->env_inc;
+        if (r->env > 1.0f) r->env = 1.0f;
+        env = r->env;
     }
+
+    if (r->shape == 2) env = env * env;
+    else if (r->shape == 3) env = env * env * env;
+    else if (r->shape == 4) { float e2 = env * env; env = e2 * e2; }
 
     r->seg_pos++;
     if (r->seg_pos >= r->seg_len) {

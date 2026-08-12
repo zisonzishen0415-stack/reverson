@@ -7,7 +7,17 @@
    replayed in reverse with a swell envelope (shape 1..4) and a crossfade
    into the segment head near the wrap to avoid clicks. Output is normalized
    against the last recorded peak so swells stay audible without clipping.
-   All audio-path math is multiply/add only (division only at trigger time). */
+   All audio-path math is multiply/add only (division only at trigger time).
+
+   Per-sample ordering contract: call rev_rev_write to record the incoming
+   sample, then rev_rev_process to produce the output for that sample.
+
+   rev_rev_trigger clamps seg_len to buf_len, so seg_len <= buf_len always
+   holds and an oversized segment cannot alias the buffer.
+
+   The swell envelope rises toward 1 over the segment body and falls to 0
+   across the crossfade window, so the output at the segment seam is ~0 on
+   both sides (click-free wrap). */
 typedef struct {
     float* buf;
     uint32_t buf_len;
