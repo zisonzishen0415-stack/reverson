@@ -13,6 +13,15 @@ int main(void) {
     CHECK(rev_absf(-4.0f) == 4.0f);
     CHECK(rev_coeff_from_tc(0.0f) == 1.0f);
     CHECK(rev_coeff_from_tc(9.0f) > 0.09f && rev_coeff_from_tc(9.0f) < 0.11f);
+    CHECK(rev_next_pow2(1u) == 1u);
+    CHECK(rev_next_pow2(2u) == 2u);
+    CHECK(rev_next_pow2(3u) == 4u);
+    CHECK(rev_next_pow2(97020u) == 131072u);
+    CHECK(rev_softclip(0.0f) == 0.0f);
+    CHECK(rev_softclip(1.0f) == 1.0f);
+    CHECK(rev_softclip(2.0f) == 1.0f);
+    CHECK(rev_softclip(-1.0f) == -1.0f);
+    CHECK(rev_softclip(0.5f) > 0.5f);
     if (fails == 0) { printf("test_util PASS\n"); return 0; }
     printf("test_util FAILED (%d)\n", fails);
     return 1;
