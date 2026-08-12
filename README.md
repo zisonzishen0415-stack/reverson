@@ -27,3 +27,19 @@ Output: `build/vst/ReversonVST_artefacts/Release/VST3/Reverson.vst3`
 3. Load Reverson on a clean guitar track. Knobs P1: Mix/Decay/Tone, P2: RevLen/Duck/Gate; BYPASS button for wet/dry A/B.
 4. The signature moves: trigger-based reverse swell per note; Duck rides the wet
    down while you play; Gate only lets the tail ring in the gaps.
+
+## DSP architecture (from scratch, ZDL-safe: no heap / double / division / sinf
+in the audio path)
+
+    in -> duck -> FDN bed (8-line, dense continuous tail)
+               +-> multi-head swell (13 taps, exp delays/gains, allpass smear)
+             -> reverse gate envelope (accelerating attack, floor -> 1 -> cut)
+             -> tone LP -> bass shelf -> sat -> width -> mix
+
+- The reverse character is the SPX90-style multi-head swell: each note is
+  answered immediately by near taps (zero predelay) and the far louder taps
+  build a crescendo, then the line runs dry -> natural reverse gate. No
+  non-causal / whole-file buffering; fully sample-by-sample causal.
+- `gate` blends dense bed (0) -> full reverse (1); `shape` blends a linear
+  attack (0) -> accelerating (1); `revlen` scales the swell span; `density`
+  sets the hold time after the peak.

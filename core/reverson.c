@@ -2,7 +2,10 @@
 #include "rev_util.h"
 #include "rev_env.h"
 #include "rev_fdn.h"
+#include "rev_swell.h"
 #include <string.h>
+
+#define REV_FDN_TOTAL_SAMPLES 61440u   /* 2048+4096+8192+16384 x2 (L/R sets) */
 
 struct Reverson {
     float sample_rate;
@@ -11,26 +14,30 @@ struct Reverson {
     float smooth_coef;
     RevEnv env;
     RevFdn fdn;
+    RevSwell swell;
     float duck_gain_sm;
     float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
     float wet_bl_l, wet_bl_r;   /* bass low-shelf one-pole state */
     /* reverse-gate envelope (classic SPX90/Alesis reverse reverb):
-       the FDN tail's amplitude envelope is reversed - on each onset the wet
-       swells 0->1 over revlen, holds, then cuts. Soft->loud->cut with ZERO
-       predelay (unlike reversed-audio playback, which lags a whole segment). */
+       the wet amplitude swells then cuts with ZERO predelay. Attack is
+       ACCELERATING (quadratic, DP/4-style): starts slow, rushes to the peak.
+       `shape` blends linear (0) -> accelerating (1). Value-based so a
+       re-trigger during the fall resumes rising from the current level
+       (no dip -> no "wobble"). */
     float rev_env;
     uint32_t rev_state;         /* 0=idle(floor), 1=rising, 2=settling */
-    float rev_env_inc;
+    float rev_env_inc;          /* current rise increment (grows each sample) */
+    float rev_env_acc;          /* rise acceleration (shape-controlled) */
     float rev_fall_inc;
     uint32_t rev_last_trigger;
     uint32_t sample_count;
 };
 
 uint32_t Reverson_state_size(float sample_rate) {
-    uint32_t fdn_total = 2048u + 4096u + 8192u + 16384u +
-                         2048u + 4096u + 8192u + 16384u;   /* = 61440 */
-    return (uint32_t)(sizeof(Reverson) + fdn_total * sizeof(float) + 64u);
+    (void)sample_rate;   /* fixed-size state (ZDL-style caller memory) */
+    return (uint32_t)(sizeof(Reverson) +
+                      (REV_FDN_TOTAL_SAMPLES + REV_SWELL_BUF_LEN) * sizeof(float) + 64u);
 }
 
 Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
@@ -48,6 +55,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
         };
         rev_fdn_init(&r->fdn, p, fdn_pow2, sample_rate);
     }
+    rev_swell_init(&r->swell, p + REV_FDN_TOTAL_SAMPLES, REV_SWELL_BUF_LEN, sample_rate);
 
     /* defaults tuned toward DIIV-style clean+spacious */
     r->target.mix = 0.55f;
@@ -68,6 +76,8 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->env_peak = 0.0f;
     r->rev_env = 1.0f;
     r->rev_state = 0u;
+    r->rev_env_inc = 0.0f;
+    r->rev_env_acc = 0.0f;
     r->rev_last_trigger = 0u;
     r->sample_count = 0u;
     Reverson_reset(r);
@@ -76,6 +86,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
 
 void Reverson_reset(Reverson* r) {
     rev_fdn_clear(&r->fdn);
+    rev_swell_clear(&r->swell);
     r->env.env = 0.0f;
     r->env.onset_env = 0.0f;
     r->env.onset = 0;
@@ -84,6 +95,8 @@ void Reverson_reset(Reverson* r) {
     r->env_peak = 0.0f;
     r->rev_env = 1.0f;
     r->rev_state = 0u;
+    r->rev_env_inc = 0.0f;
+    r->rev_env_acc = 0.0f;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
@@ -145,33 +158,42 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     rev_env_process(&r->env, in);
 
     /* reverse swell envelope with a FLOOR: the reverb is always present
-       (floor), and each onset blooms it 0->1 over revlen then settles back to
+       (floor), and each onset blooms it to 1 over revlen then settles back to
        the floor. No hard gate -> no 'reverb absent' gaps, no sudden blasts. */
     float rev_floor = 1.0f - 0.65f * r->cur.gate;
     if (rev_floor < 0.2f) rev_floor = 0.2f;
     if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
         uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
         if (r->sample_count - r->rev_last_trigger >= min_gap) {
+            uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
+            if (rise < 2u) rise = 2u;
+            uint32_t release = (uint32_t)((0.30f + 0.70f * r->cur.density) * r->sample_rate);
+            if (release < 2u) release = 2u;
+            float inv_rise = 1.0f / (float)rise;
+            float a = r->cur.shape;   /* 0 linear, 1 accelerating (quadratic) */
+            float span;
             if (r->rev_state == 0u) {
-                uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
-                if (rise < 2u) rise = 2u;
-                uint32_t release = (uint32_t)((0.30f + 0.70f * r->cur.density) * r->sample_rate);
-                if (release < 2u) release = 2u;
-                r->rev_env_inc = (1.0f - rev_floor) / (float)rise;
-                r->rev_fall_inc = (1.0f - rev_floor) / (float)release;
-                r->rev_state = 1u;
-            } else if (r->rev_state == 2u) {
-                /* settling: resume rising from the current level (no dip) */
-                r->rev_state = 1u;
+                span = 1.0f - rev_floor;
+            } else {
+                /* already rising or settling: re-plan the remaining rise from
+                   the current level, so every note gets a full swell and a
+                   fast strum never dips back to the floor (no wobble). */
+                span = 1.0f - r->rev_env;
+                if (span < 1e-4f) span = 1e-4f;
             }
+            r->rev_env_inc = span * inv_rise * (1.0f - a);
+            r->rev_env_acc = 2.0f * span * inv_rise * inv_rise * a;
+            r->rev_fall_inc = (1.0f - rev_floor) / (float)release;
+            r->rev_state = 1u;
             r->rev_last_trigger = r->sample_count;
         }
     }
 
-    /* step the swell envelope */
+    /* step the swell envelope (accelerating attack: inc grows every sample) */
     if (r->cur.gate > 0.01f) {
         if (r->rev_state == 1u) {
             r->rev_env += r->rev_env_inc;
+            r->rev_env_inc += r->rev_env_acc;
             if (r->rev_env >= 1.0f) { r->rev_env = 1.0f; r->rev_state = 2u; }
         } else if (r->rev_state == 2u) {
             r->rev_env -= r->rev_fall_inc;
@@ -199,6 +221,14 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     rev_fdn_set(&r->fdn, r->cur.decay, r->cur.tone, r->cur.mod);
     float wet_l, wet_r;
     rev_fdn_process(&r->fdn, wet_in, &wet_l, &wet_r);
+
+    /* SPX90-style multi-head swell on top of the FDN bed: gate = swell amount
+       (0 -> pure dense bed, 1 -> full reverse crescendo). */
+    float sw_l, sw_r;
+    rev_swell_set(&r->swell, r->cur.revlen, r->cur.gate);
+    rev_swell_process(&r->swell, wet_in, &sw_l, &sw_r);
+    wet_l += sw_l;
+    wet_r += sw_r;
 
     float tc = 0.05f + 0.9f * r->cur.tone;
     r->wet_lp_l += (wet_l - r->wet_lp_l) * tc;

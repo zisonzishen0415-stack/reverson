@@ -1,0 +1,108 @@
+﻿/* test_swell.c - multi-head reverse swell engine */
+#include "rev_swell.h"
+#include "rev_util.h"
+#include <stdio.h>
+
+static int fails = 0;
+#define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); fails++; } } while (0)
+static int is_finite_f(float v) {
+    return (v == v) && (v > -3.0e38f) && (v < 3.0e38f);
+}
+
+static float peak_window(const float* out_l, const float* out_r, int lo, int hi) {
+    float p = 0.0f;
+    for (int i = lo; i <= hi; ++i) {
+        if (out_l[i] < 0.0f) { if (-out_l[i] > p) p = -out_l[i]; }
+        else if (out_l[i] > p) p = out_l[i];
+        if (out_r[i] < 0.0f) { if (-out_r[i] > p) p = -out_r[i]; }
+        else if (out_r[i] > p) p = out_r[i];
+    }
+    return p;
+}
+
+int main(void) {
+    float mem[REV_SWELL_BUF_LEN];
+    RevSwell s;
+    rev_swell_init(&s, mem, REV_SWELL_BUF_LEN, 44100.0f);
+    rev_swell_set(&s, 0.3333333f, 1.0f);   /* scale 1.0 */
+
+    /* impulse -> ZERO predelay: silence until the first tap (~8 ms = 353 smp) */
+    float l, r;
+    enum { N = 22000 };
+    float out_l[N], out_r[N];
+    rev_swell_clear(&s);
+    rev_swell_process(&s, 1.0f, &l, &r);
+    out_l[0] = l; out_r[0] = r;
+    int first_nz = -1;
+    for (int i = 1; i < N; ++i) {
+        rev_swell_process(&s, 0.0f, &l, &r);
+        out_l[i] = l; out_r[i] = r;
+        if (first_nz < 0 && (l != 0.0f || r != 0.0f)) first_nz = i;
+    }
+    CHECK(first_nz >= 340 && first_nz <= 380);   /* 8 ms tap @44k1 */
+
+    /* crescendo: the loud far taps exceed the quiet near taps */
+    float early_peak = peak_window(out_l, out_r, 300, 700);
+    float late_peak  = peak_window(out_l, out_r, 9800, 10050);
+    CHECK(late_peak > early_peak * 3.0f);
+    /* loudest tap is the last (exponential gain curve) */
+    float near_last = peak_window(out_l, out_r, 7300, 7900);   /* tap 11 ~7479 */
+    CHECK(late_peak > near_last * 1.1f);
+
+    /* stereo panning: L and R responses differ */
+    float ldiff = 0.0f;
+    for (int i = 340; i < 10100; ++i) ldiff += rev_absf(out_l[i] - out_r[i]);
+    CHECK(ldiff > 0.01f);
+
+    /* amount=0 -> silence */
+    rev_swell_clear(&s);
+    rev_swell_set(&s, 0.5f, 0.0f);
+    rev_swell_process(&s, 1.0f, &l, &r);
+    CHECK(l == 0.0f && r == 0.0f);
+    for (int i = 0; i < 1000; ++i) {
+        rev_swell_process(&s, 0.0f, &l, &r);
+        CHECK(l == 0.0f && r == 0.0f);
+    }
+
+    /* revlen=1 doubles the tap span (scale 2.0): first tap ~706, last ~19756 */
+    rev_swell_clear(&s);
+    rev_swell_set(&s, 1.0f, 1.0f);
+    rev_swell_process(&s, 1.0f, &l, &r);
+    out_l[0] = l; out_r[0] = r;
+    int first_nz2 = -1;
+    float far_peak = 0.0f;
+    for (int i = 1; i < N; ++i) {
+        rev_swell_process(&s, 0.0f, &l, &r);
+        out_l[i] = l; out_r[i] = r;
+        CHECK(is_finite_f(l));
+        CHECK(is_finite_f(r));
+        if (first_nz2 < 0 && (l != 0.0f || r != 0.0f)) first_nz2 = i;
+        if (i >= 19600 && i < 20000) {
+            if (rev_absf(l) > far_peak) far_peak = rev_absf(l);
+            if (rev_absf(r) > far_peak) far_peak = rev_absf(r);
+        }
+    }
+    CHECK(first_nz2 >= 690 && first_nz2 <= 730);
+    CHECK(far_peak > 0.05f);   /* the doubled last tap is clearly present */
+
+    /* continuous input stays bounded (allpass is unit magnitude, no growth) */
+    rev_swell_clear(&s);
+    rev_swell_set(&s, 1.0f, 1.0f);
+    float peak = 0.0f;
+    for (int i = 0; i < 44100; ++i) {
+        rev_swell_process(&s, 0.3f, &l, &r);
+        CHECK(is_finite_f(l));
+        CHECK(is_finite_f(r));
+        if (rev_absf(l) > peak) peak = rev_absf(l);
+        if (rev_absf(r) > peak) peak = rev_absf(r);
+    }
+    CHECK(peak < 1.0f);
+
+    /* set clamps out-of-range args */
+    rev_swell_set(&s, 2.0f, -1.0f);
+    CHECK(s.scale == 2.0f && s.amount == 0.0f);
+
+    if (fails == 0) { printf("test_swell PASS\n"); return 0; }
+    printf("test_swell FAILED (%d)\n", fails);
+    return 1;
+}
