@@ -135,14 +135,18 @@ int main(int argc, char** argv) {
     void* mem1 = malloc(need);
     void* mem2 = malloc(need);
     void* mem3 = malloc(need);
-    if (!mem1 || !mem2 || !mem3) { fprintf(stderr, "alloc failed\n"); return 1; }
+    void* mem4 = malloc(need);
+    if (!mem1 || !mem2 || !mem3 || !mem4) { fprintf(stderr, "alloc failed\n"); return 1; }
     Reverson* core = Reverson_init(mem1, need, (float)a.rate);
     Reverson* big = Reverson_init(mem2, need, (float)a.rate);
     Reverson* only = Reverson_init(mem3, need, (float)a.rate);
-    if (!core || !big || !only) { fprintf(stderr, "init failed\n"); return 1; }
+    Reverson* wash = Reverson_init(mem4, need, (float)a.rate);
+    if (!core || !big || !only || !wash) { fprintf(stderr, "init failed\n"); return 1; }
     set_params(core, 0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.00f, 0.33f, 0.35f, 0.10f, 0.80f);
     set_params(big,  0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.95f);
     set_params(only, 1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.90f);
+    /* wash: short segments + heavy duck + smeared FDN -> reverb cloud, not echo */
+    set_params(wash, 0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.00f, 0.66f, 0.60f, 0.08f, 0.85f);
 
     /* pass 0: pre-warm reverse buffers (discard output) so the render pass
        has recorded material to replay in reverse from sample 0 */
@@ -151,6 +155,7 @@ int main(int argc, char** argv) {
         Reverson_process(core, a.mono[i], &l, &r);
         Reverson_process(big, a.mono[i], &l, &r);
         Reverson_process(only, a.mono[i], &l, &r);
+        Reverson_process(wash, a.mono[i], &l, &r);
     }
 
     unsigned total = a.n * loops;
@@ -161,17 +166,20 @@ int main(int argc, char** argv) {
     float* bigR = (float*)malloc(total * sizeof(float));
     float* onlyL = (float*)malloc(total * sizeof(float));
     float* onlyR = (float*)malloc(total * sizeof(float));
-    if (!dryL || !wetL || !wetR || !bigL || !bigR || !onlyL || !onlyR) { fprintf(stderr, "alloc failed\n"); return 1; }
+    float* washL = (float*)malloc(total * sizeof(float));
+    float* washR = (float*)malloc(total * sizeof(float));
+    if (!dryL || !wetL || !wetR || !bigL || !bigR || !onlyL || !onlyR || !washL || !washR) { fprintf(stderr, "alloc failed\n"); return 1; }
 
     unsigned out = 0;
     for (unsigned p = 0; p < loops; ++p) {
         for (unsigned i = 0; i < a.n; ++i) {
             float x = a.mono[i];
-            float wl, wr, bl, br, ol, orr;
+            float wl, wr, bl, br, ol, orr, shl, shr;
             Reverson_process(core, x, &wl, &wr);
             Reverson_process(big, x, &bl, &br);
             Reverson_process(only, x, &ol, &orr);
-            dryL[out] = x; wetL[out] = wl; wetR[out] = wr; bigL[out] = bl; bigR[out] = br; onlyL[out] = ol; onlyR[out] = orr;
+            Reverson_process(wash, x, &shl, &shr);
+            dryL[out] = x; wetL[out] = wl; wetR[out] = wr; bigL[out] = bl; bigR[out] = br; onlyL[out] = ol; onlyR[out] = orr; washL[out] = shl; washR[out] = shr;
             ++out;
         }
     }
@@ -179,7 +187,7 @@ int main(int argc, char** argv) {
     /* normalize each render to the same peak so A/B listening is fair */
     float norm_gain = 0.89f / peak_of(dryL, out);
     if (norm_gain > 0.0f) {
-        for (unsigned i = 0; i < out; ++i) { dryL[i] *= norm_gain; wetL[i] *= norm_gain; wetR[i] *= norm_gain; bigL[i] *= norm_gain; bigR[i] *= norm_gain; onlyL[i] *= norm_gain; onlyR[i] *= norm_gain; }
+        for (unsigned i = 0; i < out; ++i) { dryL[i] *= norm_gain; wetL[i] *= norm_gain; wetR[i] *= norm_gain; bigL[i] *= norm_gain; bigR[i] *= norm_gain; onlyL[i] *= norm_gain; onlyR[i] *= norm_gain; washL[i] *= norm_gain; washR[i] *= norm_gain; }
     }
 
     char path[1024];
@@ -191,11 +199,13 @@ int main(int argc, char** argv) {
     write_wav(path, bigL, bigR, out, a.rate);
     snprintf(path, sizeof(path), "%s_wet_only.wav", argv[2]);
     write_wav(path, onlyL, onlyR, out, a.rate);
+    snprintf(path, sizeof(path), "%s_wash.wav", argv[2]);
+    write_wav(path, washL, washR, out, a.rate);
 
-    printf("rendered %u loops x %u samples @ %u Hz -> %s_{dry,wet,wet_big}.wav\n",
+    printf("rendered %u loops x %u samples @ %u Hz -> %s_{dry,wet,wet_big,wet_only,wash}.wav\n",
            loops, a.n, a.rate, argv[2]);
     printf("normalized src peak=%.3f | out peaks: dry=%.3f wet=%.3f big=%.3f\n",
            src_peak, peak_of(dryL, out), peak_of(wetL, out), peak_of(bigL, out));
-    free(dryL); free(wetL); free(wetR); free(bigL); free(bigR); free(onlyL); free(onlyR); free(mem1); free(mem2); free(mem3); free(a.mono);
+    free(dryL); free(wetL); free(wetR); free(bigL); free(bigR); free(onlyL); free(onlyR); free(washL); free(washR); free(mem1); free(mem2); free(mem3); free(mem4); free(a.mono);
     return 0;
 }
