@@ -2,6 +2,10 @@
 #define REVERSON_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define REVERSON_NUM_PARAMS 10u
 #define REVERSON_MAX_REV_S 2.0f
 
@@ -33,4 +37,7 @@ void Reverson_set_param(Reverson* r, ReversonParam p, float v); /* v in [0,1] */
 float Reverson_get_param(const Reverson* r, ReversonParam p);
 /* process one mono sample -> stereo out */
 void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
+#ifdef __cplusplus
+}
+#endif
 #endif
