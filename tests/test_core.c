@@ -123,9 +123,9 @@ int main(void) {
         CHECK(l == 0.0f && rr == 0.0f);
     }
 
-    /* reverse gate: an isolated onset swells the wet in (soft->loud->cut).
-       The wet responds immediately (no segment-length predelay) and the gate
-       cuts it to silence after the hold. */
+    /* reverse swell: an isolated onset blooms the wet from a floor up to full
+       then settles back to the floor - always present (no hard gate, no
+       sudden blast). The wet responds immediately (no predelay). */
     Reverson_reset(r);
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
@@ -143,11 +143,11 @@ int main(void) {
     }
     CHECK(gpeak > 0.002f);               /* the swell is audible after the onset */
     float gtail = 0.0f;
-    for (int i = 0; i < 44100; ++i) {    /* after the gate cut */
+    for (int i = 0; i < 44100; ++i) {    /* after the swell settles */
         Reverson_process(r, 0.0f, &l, &rr);
         gtail += rev_absf(l) + rev_absf(rr);
     }
-    CHECK(gtail < 0.01f);                /* gated: wet cut to silence */
+    CHECK(gtail < gpeak);                /* settled back below the swell peak */
 
     /* max density (4 voices) + bass boost stays bounded and finite */
     Reverson_reset(r);

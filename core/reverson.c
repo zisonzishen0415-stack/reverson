@@ -20,10 +20,9 @@ struct Reverson {
        swells 0->1 over revlen, holds, then cuts. Soft->loud->cut with ZERO
        predelay (unlike reversed-audio playback, which lags a whole segment). */
     float rev_env;
-    uint32_t rev_state;         /* 0=idle, 1=rising, 2=hold, 3=cutting */
+    uint32_t rev_state;         /* 0=idle(floor), 1=rising, 2=settling */
     float rev_env_inc;
-    uint32_t rev_hold_left;
-    float rev_cut_inc;
+    float rev_fall_inc;
     uint32_t rev_last_trigger;
     uint32_t sample_count;
 };
@@ -85,7 +84,6 @@ void Reverson_reset(Reverson* r) {
     r->env_peak = 0.0f;
     r->rev_env = 1.0f;
     r->rev_state = 0u;
-    r->rev_hold_left = 0u;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
@@ -146,41 +144,40 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->sample_count++;
     rev_env_process(&r->env, in);
 
-    /* reverse-gate trigger: on each onset (re)start the swell. While a swell is
-       active a new onset keeps the current level and resumes rising (no level
-       drop, so no wobble); after idle the swell starts fresh from 0. */
+    /* reverse swell envelope with a FLOOR: the reverb is always present
+       (floor), and each onset blooms it 0->1 over revlen then settles back to
+       the floor. No hard gate -> no 'reverb absent' gaps, no sudden blasts. */
+    float rev_floor = 1.0f - 0.65f * r->cur.gate;
+    if (rev_floor < 0.2f) rev_floor = 0.2f;
     if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
         uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
         if (r->sample_count - r->rev_last_trigger >= min_gap) {
-            if (r->rev_state == 0u || r->rev_state == 3u) {
+            if (r->rev_state == 0u) {
                 uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
                 if (rise < 2u) rise = 2u;
-                r->rev_env_inc = 1.0f / (float)rise;
-                r->rev_hold_left = (uint32_t)((0.05f + 0.45f * r->cur.density) * r->sample_rate);
-                r->rev_cut_inc = 1.0f / (float)((uint32_t)(0.025f * r->sample_rate) + 1u);
-                if (r->rev_state == 0u) r->rev_env = 0.0f;
+                uint32_t release = (uint32_t)((0.30f + 0.70f * r->cur.density) * r->sample_rate);
+                if (release < 2u) release = 2u;
+                r->rev_env_inc = (1.0f - rev_floor) / (float)rise;
+                r->rev_fall_inc = (1.0f - rev_floor) / (float)release;
                 r->rev_state = 1u;
-            } else {
-                /* rising/holding: keep current level, resume rising */
-                r->rev_hold_left = (uint32_t)((0.05f + 0.45f * r->cur.density) * r->sample_rate);
+            } else if (r->rev_state == 2u) {
+                /* settling: resume rising from the current level (no dip) */
                 r->rev_state = 1u;
             }
             r->rev_last_trigger = r->sample_count;
         }
     }
 
-    /* step the reverse-gate envelope */
+    /* step the swell envelope */
     if (r->cur.gate > 0.01f) {
         if (r->rev_state == 1u) {
             r->rev_env += r->rev_env_inc;
             if (r->rev_env >= 1.0f) { r->rev_env = 1.0f; r->rev_state = 2u; }
         } else if (r->rev_state == 2u) {
-            if (r->rev_hold_left > 0u) r->rev_hold_left--;
-            else r->rev_state = 3u;
-        } else if (r->rev_state == 3u) {
-            r->rev_env -= r->rev_cut_inc;
-            if (r->rev_env <= 0.0f) { r->rev_env = 0.0f; r->rev_state = 0u; }
+            r->rev_env -= r->rev_fall_inc;
+            if (r->rev_env <= rev_floor) { r->rev_env = rev_floor; r->rev_state = 0u; }
         }
+        /* state 0: env stays at the floor (reverb always present) */
     } else {
         r->rev_env = 1.0f;
         r->rev_state = 0u;
