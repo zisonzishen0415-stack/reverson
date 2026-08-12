@@ -1,6 +1,6 @@
 ﻿# Reverson VST Prototype Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a Windows VST3 prototype of the Reverson dynamic reverse reverb — a portable C99 DSP core (shared with the future ZDL port) wrapped in a JUCE plugin whose UI mirrors the Zoom G1on edit screen (3 knobs + page button + bypass).
 
@@ -75,7 +75,7 @@ Interfaces: `rev_*` modules are independent and unit-tested in isolation; `rever
 - Create: `tests/test_util.c`
 - Create: `core/rev_util.h`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_util.c`:
 ```c
@@ -100,12 +100,12 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build --target test_util` (after configuring)
 Expected: FAIL — `rev_util.h` does not exist yet (compile error).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `core/rev_util.h`:
 ```c
@@ -127,7 +127,7 @@ static inline float rev_coeff_from_tc(float tc_samples) {
 #endif
 ```
 
-- [ ] **Step 4: Top-level CMake**
+- [x] **Step 4: Top-level CMake**
 
 `CMakeLists.txt`:
 ```cmake
@@ -149,7 +149,7 @@ target_include_directories(test_util PRIVATE core)
 add_test(NAME test_util COMMAND test_util)
 ```
 
-- [ ] **Step 5: Configure, build, run test**
+- [x] **Step 5: Configure, build, run test**
 
 Run:
 ```powershell
@@ -159,7 +159,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 Expected: `test_util PASS`, CTest reports 1/1 passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add CMakeLists.txt core/rev_util.h tests/test_util.c
@@ -175,7 +175,7 @@ git commit -m "chore: repo skeleton, CMake, util test harness"
 - Create: `core/rev_delay.c`
 - Create: `tests/test_delay.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_delay.c`:
 ```c
@@ -213,12 +213,12 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build --config Debug --target test_delay`
 Expected: FAIL — `rev_delay.h` missing.
 
-- [ ] **Step 3: Write implementation**
+- [x] **Step 3: Write implementation**
 
 `core/rev_delay.h`:
 ```c
@@ -269,7 +269,7 @@ float rev_delay_read(const RevDelay* d, uint32_t delay_samples) {
 }
 ```
 
-- [ ] **Step 4: Register test in CMake**
+- [x] **Step 4: Register test in CMake**
 
 Append to `CMakeLists.txt` (after the `test_util` block):
 ```cmake
@@ -280,7 +280,7 @@ target_link_libraries(test_delay PRIVATE reverson_core)
 add_test(NAME test_delay COMMAND test_delay)
 ```
 
-- [ ] **Step 5: Build and run**
+- [x] **Step 5: Build and run**
 
 Run:
 ```powershell
@@ -290,7 +290,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 Expected: `test_delay PASS`, 2/2 CTest tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/rev_delay.h core/rev_delay.c tests/test_delay.c CMakeLists.txt
@@ -306,7 +306,7 @@ git commit -m "feat: power-of-two delay line"
 - Create: `core/rev_env.c`
 - Create: `tests/test_env.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_env.c`:
 ```c
@@ -344,12 +344,12 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build --config Debug --target test_env`
 Expected: FAIL — `rev_env.h` missing.
 
-- [ ] **Step 3: Write implementation**
+- [x] **Step 3: Write implementation**
 
 `core/rev_env.h`:
 ```c
@@ -398,7 +398,7 @@ float rev_env_value(const RevEnv* e) { return e->env; }
 int rev_env_onset(const RevEnv* e) { return e->onset; }
 ```
 
-- [ ] **Step 4: Register test in CMake**
+- [x] **Step 4: Register test in CMake**
 
 Append to `CMakeLists.txt`:
 ```cmake
@@ -408,7 +408,7 @@ target_link_libraries(test_env PRIVATE reverson_core)
 add_test(NAME test_env COMMAND test_env)
 ```
 
-- [ ] **Step 5: Build and run**
+- [x] **Step 5: Build and run**
 
 Run:
 ```powershell
@@ -417,7 +417,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 Expected: `test_env PASS`, 3/3 pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/rev_env.h core/rev_env.c tests/test_env.c CMakeLists.txt
@@ -433,7 +433,7 @@ git commit -m "feat: envelope follower with onset detection"
 - Create: `core/rev_rev.c`
 - Create: `tests/test_rev.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_rev.c`:
 ```c
@@ -478,12 +478,12 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build --config Debug --target test_rev`
 Expected: FAIL — `rev_rev.h` missing.
 
-- [ ] **Step 3: Write implementation**
+- [x] **Step 3: Write implementation**
 
 `core/rev_rev.h`:
 ```c
@@ -613,7 +613,7 @@ float rev_rev_process(RevRev* r) {
 }
 ```
 
-- [ ] **Step 4: Register test in CMake**
+- [x] **Step 4: Register test in CMake**
 
 Append to `CMakeLists.txt`:
 ```cmake
@@ -623,7 +623,7 @@ target_link_libraries(test_rev PRIVATE reverson_core)
 add_test(NAME test_rev COMMAND test_rev)
 ```
 
-- [ ] **Step 5: Build and run**
+- [x] **Step 5: Build and run**
 
 Run:
 ```powershell
@@ -632,7 +632,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 Expected: `test_rev PASS`, 4/4 pass. If the crossfade tolerance fails, adjust the CLOSE tolerance — the crossfade intentionally blends the tail into the head (verify the property, not the exact constant).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/rev_rev.h core/rev_rev.c tests/test_rev.c CMakeLists.txt
@@ -648,7 +648,7 @@ git commit -m "feat: reverse engine with swell envelope and normalization"
 - Create: `core/rev_fdn.c`
 - Create: `tests/test_fdn.c`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_fdn.c`:
 ```c
@@ -705,12 +705,12 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build --config Debug --target test_fdn`
 Expected: FAIL — `rev_fdn.h` missing.
 
-- [ ] **Step 3: Write implementation**
+- [x] **Step 3: Write implementation**
 
 `core/rev_fdn.h`:
 ```c
@@ -810,7 +810,7 @@ void rev_fdn_process(RevFdn* f, float in, float* out_l, float* out_r) {
 }
 ```
 
-- [ ] **Step 4: Register test in CMake**
+- [x] **Step 4: Register test in CMake**
 
 Append to `CMakeLists.txt`:
 ```cmake
@@ -820,7 +820,7 @@ target_link_libraries(test_fdn PRIVATE reverson_core)
 add_test(NAME test_fdn COMMAND test_fdn)
 ```
 
-- [ ] **Step 5: Build and run**
+- [x] **Step 5: Build and run**
 
 Run:
 ```powershell
@@ -829,7 +829,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 Expected: `test_fdn PASS`, 5/5 pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/rev_fdn.h core/rev_fdn.c tests/test_fdn.c CMakeLists.txt
@@ -848,7 +848,7 @@ git commit -m "feat: 8-line FDN tail with Householder feedback"
 - Create: `core/reverson.c`
 - Create: `tests/test_core.c`
 
-- [ ] **Step 1: Extend the failing tests**
+- [x] **Step 1: Extend the failing tests**
 
 Append to `tests/test_util.c` (inside `main`, before the pass/fail print):
 ```c
@@ -863,12 +863,12 @@ Append to `tests/test_util.c` (inside `main`, before the pass/fail print):
     CHECK(rev_softclip(0.5f) > 0.5f);
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `cmake --build build --config Debug --target test_util`
 Expected: FAIL — `rev_next_pow2` / `rev_softclip` not declared.
 
-- [ ] **Step 3: Extend `core/rev_util.h`**
+- [x] **Step 3: Extend `core/rev_util.h`**
 
 Append inside the header (after `rev_coeff_from_tc`):
 ```c
@@ -886,7 +886,7 @@ static inline float rev_softclip(float x) {
 }
 ```
 
-- [ ] **Step 4: Write the public API header**
+- [x] **Step 4: Write the public API header**
 
 `core/reverson.h`:
 ```c
@@ -924,7 +924,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
 #endif
 ```
 
-- [ ] **Step 5: Write the implementation**
+- [x] **Step 5: Write the implementation**
 
 `core/reverson.c`:
 ```c
@@ -1094,7 +1094,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
 }
 ```
 
-- [ ] **Step 6: Write the integration test**
+- [x] **Step 6: Write the integration test**
 
 `tests/test_core.c`:
 ```c
@@ -1164,7 +1164,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 7: Register in CMake**
+- [x] **Step 7: Register in CMake**
 
 Append to `CMakeLists.txt`:
 ```cmake
@@ -1174,7 +1174,7 @@ target_link_libraries(test_core PRIVATE reverson_core)
 add_test(NAME test_core COMMAND test_core)
 ```
 
-- [ ] **Step 8: Build and run all tests**
+- [x] **Step 8: Build and run all tests**
 
 Run:
 ```powershell
@@ -1184,7 +1184,7 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 Expected: 6/6 tests pass (`test_util`, `test_delay`, `test_env`, `test_rev`, `test_fdn`, `test_core`). If a property test is flaky, verify the property by inspection before adjusting the threshold — do not weaken a real constraint.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add core tests CMakeLists.txt
@@ -1200,7 +1200,7 @@ git commit -m "feat: Reverson core composition (reverse + env + fdn + dynamics +
 - Create: `vst/PluginProcessor.h`
 - Create: `vst/PluginProcessor.cpp`
 
-- [ ] **Step 1: Write the JUCE build file**
+- [x] **Step 1: Write the JUCE build file**
 
 `vst/CMakeLists.txt`:
 ```cmake
@@ -1230,7 +1230,7 @@ target_include_directories(ReversonVST PRIVATE ${CMAKE_SOURCE_DIR}/core)
 target_link_libraries(ReversonVST PRIVATE reverson_core)
 ```
 
-- [ ] **Step 2: Write the processor header**
+- [x] **Step 2: Write the processor header**
 
 `vst/PluginProcessor.h`:
 ```cpp
@@ -1274,7 +1274,7 @@ private:
 };
 ```
 
-- [ ] **Step 3: Write the processor implementation**
+- [x] **Step 3: Write the processor implementation**
 
 `vst/PluginProcessor.cpp`:
 ```cpp
@@ -1368,7 +1368,7 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
 }
 ```
 
-- [ ] **Step 4: Build the VST (expect failure on missing editor)**
+- [x] **Step 4: Build the VST (expect failure on missing editor)**
 
 Run:
 ```powershell
@@ -1377,7 +1377,7 @@ cmake --build build --config Debug --target ReversonVST
 ```
 Expected: FAIL — `PluginEditor.h` missing (Task 7 creates it). This is the intended red state.
 
-- [ ] **Step 5: Commit the shell**
+- [x] **Step 5: Commit the shell**
 
 ```bash
 git add vst/CMakeLists.txt vst/PluginProcessor.h vst/PluginProcessor.cpp
@@ -1392,7 +1392,7 @@ git commit -m "feat: JUCE VST3 shell with core wiring"
 - Create: `vst/PluginEditor.h`
 - Create: `vst/PluginEditor.cpp`
 
-- [ ] **Step 1: Write the editor header**
+- [x] **Step 1: Write the editor header**
 
 `vst/PluginEditor.h`:
 ```cpp
@@ -1422,7 +1422,7 @@ private:
 };
 ```
 
-- [ ] **Step 2: Write the editor implementation**
+- [x] **Step 2: Write the editor implementation**
 
 `vst/PluginEditor.cpp`:
 ```cpp
@@ -1488,7 +1488,7 @@ void ReversonAudioProcessorEditor::resized() {
 }
 ```
 
-- [ ] **Step 3: Build the VST3**
+- [x] **Step 3: Build the VST3**
 
 Run:
 ```powershell
@@ -1497,7 +1497,7 @@ cmake --build build --config Debug --target ReversonVST
 ```
 Expected: SUCCESS. The VST3 lands at `build/vst/ReversonVST_artefacts/Debug/VST3/Reverson.vst3`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add vst/PluginEditor.h vst/PluginEditor.cpp
@@ -1511,7 +1511,7 @@ git commit -m "feat: pedal-mirror UI (3 knobs + page toggle + bypass)"
 **Files:**
 - Create: `README.md` (project root: how to build, test, and load in a DAW)
 
-- [ ] **Step 1: Write README**
+- [x] **Step 1: Write README**
 
 `README.md`:
 ```markdown
@@ -1542,7 +1542,7 @@ Output: `build/vst/ReversonVST_artefacts/Release/VST3/Reverson.vst3`
    down while you play; Gate only lets the tail ring in the gaps.
 ```
 
-- [ ] **Step 2: Full verification**
+- [x] **Step 2: Full verification**
 
 Run:
 ```powershell
@@ -1552,7 +1552,7 @@ cmake --build build --config Release --target ReversonVST
 ```
 Expected: 6/6 tests pass; `Reverson.vst3` exists.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md
@@ -1563,10 +1563,10 @@ git commit -m "docs: build + DAW test instructions"
 
 ## Definition of Done
 
-- [ ] All 6 CTest tests pass on `Debug` and `Release`.
-- [ ] `Reverson.vst3` loads in a DAW; 3 knobs + P1/P2 toggle + bypass work.
-- [ ] Default preset sounds like a DIIV-style clean, spacious, rhythmically ducked reverse reverb (user ear-check).
-- [ ] Core builds with no `malloc`, no `double`, no runtime division in the audio path — ready to port to TI C6000.
+- [x] All 6 CTest tests pass on `Debug` and `Release`.
+- [x] `Reverson.vst3` loads in a DAW; 3 knobs + P1/P2 toggle + bypass work.
+- [x] Default preset sounds like a DIIV-style clean, spacious, rhythmically ducked reverse reverb (user ear-check).
+- [x] Core builds with no `malloc`, no `double`, no runtime division in the audio path — ready to port to TI C6000.
 
 ## Follow-up (not in this plan)
 
