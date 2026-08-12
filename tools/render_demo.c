@@ -5,9 +5,9 @@
  *   <prefix>_dry.wav
  *   <prefix>_<preset>.wav   for each preset (or one named preset)
  *
- * usage: reverson_render <in.wav> <out_prefix> [loops] [preset]
+ * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold]
  *   loops  - number of loop passes (default 2)
- *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense (default: all)
+ *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady (default: all)
  *
  * Build: linked against reverson_core (see tools/CMakeLists.txt).
  */
@@ -38,6 +38,7 @@ static const Preset PRESETS[] = {
     { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.00f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f },
     { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f },
     { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f },
+    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.00f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f },
 };
 #define NUM_PRESETS ((unsigned)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
@@ -136,7 +137,7 @@ static float peak_of(const float* x, unsigned n) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset]\n");
+        fprintf(stderr, "usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold]\n");
         return 1;
     }
     Audio a;
@@ -144,6 +145,8 @@ int main(int argc, char** argv) {
     unsigned loops = argc > 3 ? (unsigned)atoi(argv[3]) : 2u;
     if (loops < 1) loops = 1;
     const char* filter = argc > 4 ? argv[4] : NULL;
+    int cold = (argc > 5 && strcmp(argv[5], "cold") == 0);
+    if (cold) loops = 1;
 
     /* normalize to peak 0.25 */
     float src_peak = peak_of(a.mono, a.n);
@@ -182,9 +185,12 @@ int main(int argc, char** argv) {
         if (!core) { fprintf(stderr, "init failed\n"); return 1; }
         apply_preset(core, pr);
 
-        /* pre-warm reverse buffer (discard output) */
-        for (unsigned i = 0; i < a.n; ++i) {
-            float l, r; Reverson_process(core, a.mono[i], &l, &r);
+        /* pre-warm reverse buffer (discard output) unless cold (live-take
+           simulation starts from an empty buffer) */
+        if (!cold) {
+            for (unsigned i = 0; i < a.n; ++i) {
+                float l, r; Reverson_process(core, a.mono[i], &l, &r);
+            }
         }
         /* render */
         unsigned out = 0;

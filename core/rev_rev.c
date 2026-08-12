@@ -4,6 +4,7 @@
 
 void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rate) {
     r->buf = mem;
+    r->sample_rate = sample_rate;
     r->buf_len = buf_len_pow2;
     r->mask = buf_len_pow2 - 1u;
     r->write_idx = 0u;
@@ -57,25 +58,41 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     r->cross_len = cross_samples < 1u ? 1u : cross_samples;
     if (r->cross_len > r->seg_len) r->cross_len = r->seg_len;
     r->cross_inc = 1.0f / (float)r->cross_len;
-    r->env_inc = 1.0f / (float)(r->seg_len - r->cross_len + 1u); /* rise over rise-window */
+    /* swell rise bounded to ~0.35 s: long segments do not create a long
+       pre-delay; env holds at 1.0 for the rest of the body, then falls in
+       the crossfade */
+    {
+        uint32_t body = r->seg_len - r->cross_len; /* seg_len >= 2 and cross_len <= seg_len */
+        uint32_t rise_time = (uint32_t)(0.35f * r->sample_rate);
+        if (rise_time < 1u) rise_time = 1u;
+        uint32_t rise = body < rise_time ? body : rise_time;
+        if (rise < 1u) rise = 1u;
+        r->env_inc = 1.0f / (float)rise;
+    }
     r->shape = (shape < 1) ? 1 : ((shape > 4) ? 4 : shape);
     r->norm_target = rev_clampf(0.9f / (r->seg_peak + 1e-6f), 0.1f, 3.0f);
     r->anchor = r->write_idx;
-    uint32_t body = r->seg_len - r->cross_len; /* seg_len >= 2 and cross_len <= seg_len */
+    uint32_t body = r->seg_len - r->cross_len;
+    /* smooth retrigger: keep the envelope if a swell is already playing so a
+       new onset re-anchors without a hard level reset (kills the wobble) */
+    int fresh = (r->v_env[0] == 0.0f && r->v_cross[0] == 0.0f);
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         if (v < r->n_voices) {
             uint32_t pos = (uint32_t)((uint64_t)v * (uint64_t)r->seg_len / (uint64_t)r->n_voices);
             r->v_pos[v] = pos;
-            if (pos >= body) {
-                uint32_t k = pos - body;
-                r->v_cross[v] = (float)k * r->cross_inc;
-                if (r->v_cross[v] > 1.0f) r->v_cross[v] = 1.0f;
-                r->v_env[v] = 0.0f;
-            } else {
-                r->v_cross[v] = 0.0f;
-                r->v_env[v] = (float)pos * r->env_inc;
-                if (r->v_env[v] > 1.0f) r->v_env[v] = 1.0f;
+            if (fresh) {
+                if (pos >= body) {
+                    uint32_t k = pos - body;
+                    r->v_cross[v] = (float)k * r->cross_inc;
+                    if (r->v_cross[v] > 1.0f) r->v_cross[v] = 1.0f;
+                    r->v_env[v] = 0.0f;
+                } else {
+                    r->v_cross[v] = 0.0f;
+                    r->v_env[v] = (float)pos * r->env_inc;
+                    if (r->v_env[v] > 1.0f) r->v_env[v] = 1.0f;
+                }
             }
+            /* not fresh: keep v_env/v_cross and just re-anchor (smooth retrigger) */
         } else {
             r->v_pos[v] = 0u;
             r->v_env[v] = 0.0f;

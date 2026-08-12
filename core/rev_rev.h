@@ -30,12 +30,19 @@
    The read heads are anchored at trigger time (anchor = write_idx), so live
    recording does not move them; each voice replays the material ending at
    anchor-1 in reverse and loops that anchored material until the next
-   trigger re-anchors. */
+   trigger re-anchors.
+
+   Smooth retrigger: if a swell is already playing when a new trigger arrives,
+   the envelope is kept (re-anchor only), so rapid onsets do not hard-reset the
+   level and pump ('wobble'). The swell rise is bounded to ~0.35 s regardless
+   of segment length, so long reverse segments do not create a long pre-delay
+   before the wash blooms. */
 
 #define REV_REV_MAX_VOICES 4u
 
 typedef struct {
     float* buf;
+    float sample_rate;
     uint32_t buf_len;
     uint32_t mask;
     uint32_t write_idx;
