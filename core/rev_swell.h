@@ -1,4 +1,4 @@
-﻿/* rev_swell.h - SPX90-style reverse swell engine (part of Reverson). */
+/* rev_swell.h - SPX90-style reverse swell engine (part of Reverson). */
 #ifndef REV_SWELL_H
 #define REV_SWELL_H
 #include <stdint.h>

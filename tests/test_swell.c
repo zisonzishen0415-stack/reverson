@@ -1,4 +1,4 @@
-﻿/* test_swell.c - multi-head reverse swell engine */
+/* test_swell.c - multi-head reverse swell engine */
 #include "rev_swell.h"
 #include "rev_util.h"
 #include <stdio.h>

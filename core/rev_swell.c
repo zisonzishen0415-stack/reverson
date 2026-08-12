@@ -1,4 +1,4 @@
-﻿/* rev_swell.c - SPX90-style reverse swell engine (part of Reverson).
+/* rev_swell.c - SPX90-style reverse swell engine (part of Reverson).
  * Tap table: 13 heads, exponentially spaced delays (8..~224 ms, ratio 1.32)
  * and exponentially increasing gains (ratio 1.25). Per-tap stereo pan
  * (L/R alternate) gives natural width. 3 one-pole allpasses diffuse the taps
