@@ -11,6 +11,24 @@
 **Prerequisites (verified on 2026-08-12):** `cmake 4.4.2` on PATH; VS 2022 Build Tools with VC tools installed; `git`; network access for JUCE fetch.
 
 ---
+
+## Controller Amendments (from Task 0 code review, 2026-08-12)
+
+These amendments are authoritative for Tasks 1-8:
+
+1. Task 0 assertion for `rev_coeff_from_tc(9.0f)` is the range `(0.09, 0.11)` (1/10 == 0.1); the original `(0.9, 0.91)` was an arithmetic slip.
+2. Test sources need the `core/` include path: always use `target_include_directories(<test> PRIVATE core)`.
+3. Use `include(CTest)` and register tests under `if(BUILD_TESTING)`.
+4. Use this helper for test registration (equivalent to the verbose `add_executable`+`target_link_libraries`+`add_test` blocks shown in Tasks 1-8):
+   ```cmake
+   function(reverson_add_test name)
+       add_executable(${name} tests/${name}.c)
+       target_include_directories(${name} PRIVATE core)
+       target_link_libraries(${name} PRIVATE reverson_core)
+       add_test(NAME ${name} COMMAND ${name})
+   endfunction()
+   ```
+5. Add warnings to `reverson_core`: MSVC `/W4`, GCC/Clang `-Wall -Wextra`.
 ## File Structure
 
 ```
@@ -67,7 +85,7 @@ int main(void) {
     CHECK(rev_maxf(2.0f, 3.0f) == 3.0f);
     CHECK(rev_absf(-4.0f) == 4.0f);
     CHECK(rev_coeff_from_tc(0.0f) == 1.0f);
-    CHECK(rev_coeff_from_tc(9.0f) > 0.9f && rev_coeff_from_tc(9.0f) < 0.91f);
+    CHECK(rev_coeff_from_tc(9.0f) > 0.09f && rev_coeff_from_tc(9.0f) < 0.11f);
     if (fails == 0) { printf("test_util PASS\n"); return 0; }
     printf("test_util FAILED (%d)\n", fails);
     return 1;
@@ -119,6 +137,7 @@ endif()
 
 enable_testing()
 add_executable(test_util tests/test_util.c)
+target_include_directories(test_util PRIVATE core)
 add_test(NAME test_util COMMAND test_util)
 ```
 
