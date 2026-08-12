@@ -258,6 +258,7 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "bad override '%s' (use key=value)\n", argv[oi]);
                 return 1;
             }
+            if (strcmp(k, "bed") == 0)   { Reverson_set_bed(core, v); continue; }
             if (strcmp(k, "mode") == 0) {
                 int mi = (int)v;
                 if (mi < 1) mi = 1;

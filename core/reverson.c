@@ -15,6 +15,7 @@ struct Reverson {
     RevEnv env;
     RevFdn fdn;
     RevSwell swell;
+    float bed;                /* FDN bed mix: 1 = bed+swell, 0 = pure swell */
     float duck_gain_sm;
     float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
@@ -75,6 +76,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     r->duck_gain_sm = 1.0f;
+    r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->env_peak = 0.0f;
     r->rev_env = 1.0f;
     r->rev_state = 0u;
@@ -94,6 +96,7 @@ void Reverson_reset(Reverson* r) {
     r->env.onset = 0;
     r->env.was_playing = 0;
     r->duck_gain_sm = 1.0f;
+    r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->env_peak = 0.0f;
     r->rev_env = 1.0f;
     r->rev_state = 0u;
@@ -103,6 +106,10 @@ void Reverson_reset(Reverson* r) {
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
     r->wet_bl_r = 0.0f;
+}
+
+void Reverson_set_bed(Reverson* r, float bed) {
+    r->bed = rev_clampf(bed, 0.0f, 1.0f);
 }
 
 void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
@@ -159,9 +166,10 @@ void Reverson_map6(float mix, float rev, float space, float tone,
     float shape   = 0.45f + 0.30f * rev;
     float dens    = 0.95f - 0.50f * rev;
 
-    /* SPACE knob: decay lengthens (eased), the swell span follows it so the
-       shape stays proportional, and the tail gets a touch more LFO/width. */
-    float decay   = 0.45f + 0.55f * (space * space);
+    /* SPACE knob (pure-reverse default): the swell span scales the space,
+       width opens up, LFO adds life. decay is fixed - with the FDN bed off
+       (default) the tail is shaped by grain instead. */
+    float decay   = 0.70f;
     float revlen  = 0.25f + 0.50f * space;
     float mod     = 0.20f + 0.25f * space;
     float width   = 0.75f + 0.20f * space;
@@ -224,6 +232,25 @@ void Reverson_map3(float c, float s, float t, ReversonParams* p) {
     p->density = dens;
     p->bass = bass;
     p->diffusion = diff;
+}
+
+void Reverson_set_6knob(Reverson* r, float mix, float rev, float space,
+                        float tone, float grain, float duck) {
+    ReversonParams p;
+    Reverson_map6(mix, rev, space, tone, grain, duck, &p);
+    Reverson_set_param(r, REVERSON_PARAM_MIX, p.mix);
+    Reverson_set_param(r, REVERSON_PARAM_DECAY, p.decay);
+    Reverson_set_param(r, REVERSON_PARAM_TONE, p.tone);
+    Reverson_set_param(r, REVERSON_PARAM_REVLEN, p.revlen);
+    Reverson_set_param(r, REVERSON_PARAM_DUCK, p.duck);
+    Reverson_set_param(r, REVERSON_PARAM_GATE, p.gate);
+    Reverson_set_param(r, REVERSON_PARAM_SHAPE, p.shape);
+    Reverson_set_param(r, REVERSON_PARAM_MOD, p.mod);
+    Reverson_set_param(r, REVERSON_PARAM_SAT, p.sat);
+    Reverson_set_param(r, REVERSON_PARAM_WIDTH, p.width);
+    Reverson_set_param(r, REVERSON_PARAM_DENSITY, p.density);
+    Reverson_set_param(r, REVERSON_PARAM_BASS, p.bass);
+    Reverson_set_param(r, REVERSON_PARAM_DIFFUSION, p.diffusion);
 }
 
 void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
@@ -306,12 +333,20 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->duck_gain_sm += (duck_gain - r->duck_gain_sm) * c;
     float wet_in = in * r->duck_gain_sm;
 
-    rev_fdn_set(&r->fdn, r->cur.decay, r->cur.tone, r->cur.mod);
-    float wet_l, wet_r;
-    rev_fdn_process(&r->fdn, wet_in, &wet_l, &wet_r);
+    /* FDN bed (optional, default off): when bed is ~0 the 8-line network is
+       skipped entirely (CPU/memory saver - the pure reverse path is the
+       default sound). */
+    float wet_l = 0.0f, wet_r = 0.0f;
+    if (r->bed > 0.001f) {
+        rev_fdn_set(&r->fdn, r->cur.decay, r->cur.tone, r->cur.mod);
+        float fdn_l, fdn_r;
+        rev_fdn_process(&r->fdn, wet_in, &fdn_l, &fdn_r);
+        wet_l = fdn_l * r->bed;
+        wet_r = fdn_r * r->bed;
+    }
 
-    /* SPX90-style multi-head swell on top of the FDN bed: gate = swell amount
-       (0 -> pure dense bed, 1 -> full reverse crescendo). */
+    /* SPX90-style multi-head swell: gate = swell amount
+       (0 -> dry pass-through in pure-reverse mode, 1 -> full reverse). */
     float sw_l, sw_r;
     rev_swell_set(&r->swell, r->cur.revlen, r->cur.gate);
     /* Diffusion knob: diffuser feedback, 0 = sharp reverse gate .. ~0.7 = dense */

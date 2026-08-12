@@ -53,6 +53,14 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
    ZDL-safe (polynomials only, no div/sin/pow). */
 void Reverson_map6(float mix, float rev, float space, float tone,
                    float grain, float duck, ReversonParams* p);
+/* Convenience: map the 6 knobs and apply the whole set to an instance
+   (smoothing applies). Shared by the VST and the ZDL port. */
+void Reverson_set_6knob(Reverson* r, float mix, float rev, float space,
+                        float tone, float grain, float duck);
+/* FDN bed mix in [0,1]: 1 = continuous bed + reverse swell (current),
+   0 = pure reverse swell (no continuous bed). A/B tuning aid; not in the
+   6-knob UI yet. */
+void Reverson_set_bed(Reverson* r, float bed);
 #ifdef __cplusplus
 }
 #endif

@@ -44,6 +44,7 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_GATE, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.6f);
+    Reverson_set_bed(r, 1.0f);   /* FDN bed path: stereo spread test */
     /* warm up the reverse buffer: with the anchored read head the segment only
        replays pre-trigger material, so feed the pulse pattern long enough that
        the anchor region holds recorded audio before measuring */
@@ -68,6 +69,7 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.2f);
+    Reverson_set_bed(r, 1.0f);   /* bed on: duck rides the FDN bed down */
     for (int i = 0; i < 30000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* settle duck (5ms TC converges slowly) */
     float peak = 0.0f;
     for (int i = 0; i < 5000; ++i) {
@@ -89,6 +91,7 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_GATE, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_SAT, 0.0f);
+    Reverson_set_bed(r, 1.0f);   /* bed on: wet bus stays bounded at decay=1 */
     float wpeak = 0.0f;
     for (int blk = 0; blk < 8; ++blk) {
         float dc = (blk & 1u) ? -1.0f : 1.0f;
@@ -104,6 +107,7 @@ int main(void) {
     Reverson_reset(r);
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_WIDTH, 0.0f);
+    Reverson_set_bed(r, 1.0f);   /* bed on: width collapse applies to the bed */
     for (int i = 0; i < 8820; ++i) {
         float in = (i % 220 == 0) ? 0.8f : 0.0f;
         Reverson_process(r, in, &l, &rr); /* settle: cur.width -> 0 */
@@ -131,6 +135,7 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.3f);  /* ~0.64 s swell */
+    Reverson_set_bed(r, 0.0f);   /* default: pure reverse swell, no bed */
     Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.2f); /* short hold */
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.7f);
     for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr); /* silence */
@@ -158,6 +163,7 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_DENSITY, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_BASS, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_SAT, 0.0f);
+    Reverson_set_bed(r, 1.0f);   /* bed on: max density + bass stays bounded */
     for (int i = 0; i < 95000; ++i) {
         float in = (i % 220 == 0) ? 0.8f : 0.0f;
         Reverson_process(r, in, &l, &rr);

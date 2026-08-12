@@ -31,7 +31,7 @@ into a natural gate.
 | Param | Range | What it does |
 |---|---|---|
 | Mix | 0..1 | dry/wet balance |
-| Decay | 0..1 | FDN tail length |
+| Decay | 0..1 | optional FDN bed tail (fixed while the bed is off) |
 | Tone | 0..1 | wet low-pass (dark..bright) |
 | RevLen | 0..1 | reverse swell length |
 | Duck | 0..1 | wet rides down while you play |
@@ -43,18 +43,38 @@ into a natural gate.
 | Density | 0..1 | swell hold time after the peak |
 | Bass | 0..1 | low-mid body shelf |
 
+## 6-knob ergonomic mapping (two pages x 3)
+
+The 13 internal params are driven by 6 linked knobs; each internal param is
+owned by exactly one knob so they never fight:
+
+| Page | Knob | Owns |
+|---|---|---|
+| P1 | Mix | dry/wet (direct) |
+| P1 | Rev | gate / shape / density (wash -> gated reverse) |
+| P1 | Space | revlen / mod / width (small -> huge) |
+| P2 | Tone | tone / bass / sat (dark -> bright) |
+| P2 | Grain | diffusion (grainy -> smooth) |
+| P2 | Duck | duck (direct) |
+
+Curves are shaped so any combination stays musical (gate eases, decay is
+fixed with the bed off, tone adds saturation as it brightens).
+
 ## DSP architecture
 
 ```
-in -> duck -> FDN bed (8-line, dense continuous tail)
-           +-> multi-head swell (13 taps, exp delays/gains, allpass smear)
+in -> duck -> multi-head swell (13 taps, exp delays/gains)
+              -> 3-stage aperiodic feedback diffusion (fills the gaps)
          -> reverse gate envelope (accelerating attack, floor -> 1 -> cut)
          -> tone LP -> bass shelf -> sat -> width -> mix
+         [optional 8-line FDN bed, default off]
 ```
 
-The reverse character comes from the SPX90-style tap structure (classic
-reverse reverb, improved: a continuous FDN bed keeps it dense instead of
-the hard empty gate of vintage units).
+Pure reverse-swell engine (SPX90-style), modernised: the 3-stage
+mutually-prime diffuser (277/449/613 sample delays) turns the discrete
+echo grains into dense aperiodic smear, so it reads as reverb without
+losing the reverse crescendo/gate. An FDN bed is still in the code but
+defaults off (pure reverse was chosen as the sound).
 
 ## Build
 
