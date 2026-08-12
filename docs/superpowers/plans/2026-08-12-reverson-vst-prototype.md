@@ -34,6 +34,7 @@ These amendments are authoritative for Tasks 1-8:
 8. Task 2 executed with a design fix: `RevEnv` has TWO envelopes — the main `env` (2 ms attack / 150 ms release) drives duck/gate level, and a fast `onset_env` (2 ms attack / 10 ms release) drives the onset flag so onsets re-arm between notes (per-note reverse triggering, ~46 ms re-arm). Task 2 code is authoritative over the plan text.
 9. Task 3 executed with a design fix: `rev_rev_trigger` clamps `seg_len` to `buf_len`, and the swell envelope rises to 1 over `(seg_len - cross_len)` samples then falls to 0 across the crossfade window, so the segment seam is click-free. Task 3 code is authoritative over the plan text.
 10. Task 4 executed with a design fix: the FDN LFO is a true triangle (`tri = 1 - 4*|phase - 0.5|`, no jump at phase wrap). Task 5 must use longer, distinct power-of-2 FDN line lengths (e.g., {2048,4096,8192,16384} per side) and re-tune the decay taper by ear — the Task 4 test sizes are intentionally small.
+11. Task 5 executed with a design fix: the wet bus is ALWAYS soft-limited (`rev_softclip(wet * drive)` with `drive = 1 + 3*sat`, no bypass at sat=0) so high decay/mix can never hard-clip; `Reverson_reset` also zeroes `onset_env`/`onset`. Task 5 code is authoritative over the plan text.
 ## File Structure
 
 ```
