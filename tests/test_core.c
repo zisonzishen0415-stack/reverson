@@ -68,7 +68,7 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.2f);
-    for (int i = 0; i < 5000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* settle duck */
+    for (int i = 0; i < 30000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* settle duck (5ms TC converges slowly) */
     float peak = 0.0f;
     for (int i = 0; i < 5000; ++i) {
         Reverson_process(r, 1.0f, &l, &rr);
@@ -123,30 +123,31 @@ int main(void) {
         CHECK(l == 0.0f && rr == 0.0f);
     }
 
-    /* gate mutes wet while playing; tail rings in the gap */
+    /* reverse gate: an isolated onset swells the wet in (soft->loud->cut).
+       The wet responds immediately (no segment-length predelay) and the gate
+       cuts it to silence after the hold. */
     Reverson_reset(r);
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
-    /* warm up the reverse buffer with the gate-driving signal so the anchored
-       segment replays recorded material (tail) once the gate opens */
-    for (int i = 0; i < 95000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* warm up reverse buffer */
-    for (int i = 0; i < 5000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* settle */
+    Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.3f);  /* ~0.64 s swell */
+    Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.2f); /* short hold */
+    Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.7f);
+    for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr); /* silence */
+    Reverson_process(r, 1.0f, &l, &rr);  /* the onset */
     float gpeak = 0.0f;
-    for (int i = 0; i < 2000; ++i) {
-        Reverson_process(r, 1.0f, &l, &rr);
+    for (int i = 0; i < 88200; ++i) {    /* 2 s: swell rises, holds, cuts */
+        Reverson_process(r, 0.0f, &l, &rr);
         if (rev_absf(l) > gpeak) gpeak = rev_absf(l);
         if (rev_absf(rr) > gpeak) gpeak = rev_absf(rr);
     }
-    CHECK(gpeak < 0.05f);
-    for (int i = 0; i < 30000; ++i) Reverson_process(r, 0.0f, &l, &rr);
+    CHECK(gpeak > 0.002f);               /* the swell is audible after the onset */
     float gtail = 0.0f;
-    for (int i = 0; i < 10000; ++i) {
+    for (int i = 0; i < 44100; ++i) {    /* after the gate cut */
         Reverson_process(r, 0.0f, &l, &rr);
-        if (rev_absf(l) > gtail) gtail = rev_absf(l);
-        if (rev_absf(rr) > gtail) gtail = rev_absf(rr);
+        gtail += rev_absf(l) + rev_absf(rr);
     }
-    CHECK(gtail > 0.001f);
+    CHECK(gtail < 0.01f);                /* gated: wet cut to silence */
 
     /* max density (4 voices) + bass boost stays bounded and finite */
     Reverson_reset(r);

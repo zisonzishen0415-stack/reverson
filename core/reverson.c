@@ -1,7 +1,6 @@
 #include "reverson.h"
 #include "rev_util.h"
 #include "rev_env.h"
-#include "rev_rev.h"
 #include "rev_fdn.h"
 #include <string.h>
 
@@ -11,22 +10,28 @@ struct Reverson {
     ReversonParams cur;
     float smooth_coef;
     RevEnv env;
-    RevRev rev;
     RevFdn fdn;
     float duck_gain_sm;
-    float gate_gain_sm;         /* output gate smoother (gated reverse) */
     float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
     float wet_bl_l, wet_bl_r;   /* bass low-shelf one-pole state */
-    uint32_t rev_len_max;
-    uint32_t rev_cross_samples;
+    /* reverse-gate envelope (classic SPX90/Alesis reverse reverb):
+       the FDN tail's amplitude envelope is reversed - on each onset the wet
+       swells 0->1 over revlen, holds, then cuts. Soft->loud->cut with ZERO
+       predelay (unlike reversed-audio playback, which lags a whole segment). */
+    float rev_env;
+    uint32_t rev_state;         /* 0=idle, 1=rising, 2=hold, 3=cutting */
+    float rev_env_inc;
+    uint32_t rev_hold_left;
+    float rev_cut_inc;
+    uint32_t rev_last_trigger;
+    uint32_t sample_count;
 };
 
 uint32_t Reverson_state_size(float sample_rate) {
-    uint32_t rev_pow2 = rev_next_pow2((uint32_t)(sample_rate * 2.2f));
     uint32_t fdn_total = 2048u + 4096u + 8192u + 16384u +
                          2048u + 4096u + 8192u + 16384u;   /* = 61440 */
-    return (uint32_t)(sizeof(Reverson) + rev_pow2 * sizeof(float) + fdn_total * sizeof(float) + 64u);
+    return (uint32_t)(sizeof(Reverson) + fdn_total * sizeof(float) + 64u);
 }
 
 Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
@@ -35,12 +40,8 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     Reverson* r = (Reverson*)mem;
     memset(r, 0, sizeof(Reverson));
     r->sample_rate = sample_rate;
-    r->rev_len_max = (uint32_t)(sample_rate * REVERSON_MAX_REV_S);
-    uint32_t rev_pow2 = rev_next_pow2((uint32_t)(sample_rate * 2.2f));
     float* p = (float*)((uint8_t*)mem + sizeof(Reverson));
     rev_env_init(&r->env, sample_rate);
-    rev_rev_init(&r->rev, p, rev_pow2, sample_rate);
-    p += rev_pow2;
     {
         static const uint32_t fdn_pow2[REV_FDN_LINES] = {
             2048, 4096, 8192, 16384,
@@ -60,27 +61,31 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->target.mod = 0.35f;
     r->target.sat = 0.10f;
     r->target.width = 0.80f;
-    r->target.density = 0.75f;   /* 3-voice reverse wash */
+    r->target.density = 0.75f;   /* swell hold time */
     r->target.bass = 0.55f;      /* slight low-mid body */
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     r->duck_gain_sm = 1.0f;
-    r->gate_gain_sm = 1.0f;
-    r->rev_cross_samples = (uint32_t)(0.004f * sample_rate);
+    r->env_peak = 0.0f;
+    r->rev_env = 1.0f;
+    r->rev_state = 0u;
+    r->rev_last_trigger = 0u;
+    r->sample_count = 0u;
     Reverson_reset(r);
     return r;
 }
 
 void Reverson_reset(Reverson* r) {
-    rev_rev_clear(&r->rev);
     rev_fdn_clear(&r->fdn);
     r->env.env = 0.0f;
     r->env.onset_env = 0.0f;
     r->env.onset = 0;
     r->env.was_playing = 0;
     r->duck_gain_sm = 1.0f;
-    r->gate_gain_sm = 1.0f;
     r->env_peak = 0.0f;
+    r->rev_env = 1.0f;
+    r->rev_state = 0u;
+    r->rev_hold_left = 0u;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
@@ -138,21 +143,51 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->cur.density += (r->target.density - r->cur.density) * c;
     r->cur.bass += (r->target.bass - r->cur.bass) * c;
 
+    r->sample_count++;
     rev_env_process(&r->env, in);
-    if (rev_env_onset(&r->env)) {
-        uint32_t seg_len = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
-        if (seg_len > r->rev_len_max) seg_len = r->rev_len_max;
-        int sh = 1 + (int)(3.99f * r->cur.shape);
-        uint32_t voices = 1u + (uint32_t)(3.99f * r->cur.density);   /* 1..4 */
-        rev_rev_set_voices(&r->rev, voices);
-        rev_rev_trigger(&r->rev, seg_len, r->rev_cross_samples, sh);
+
+    /* reverse-gate trigger: on each onset (re)start the swell. While a swell is
+       active a new onset keeps the current level and resumes rising (no level
+       drop, so no wobble); after idle the swell starts fresh from 0. */
+    if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
+        uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
+        if (r->sample_count - r->rev_last_trigger >= min_gap) {
+            if (r->rev_state == 0u || r->rev_state == 3u) {
+                uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
+                if (rise < 2u) rise = 2u;
+                r->rev_env_inc = 1.0f / (float)rise;
+                r->rev_hold_left = (uint32_t)((0.05f + 0.45f * r->cur.density) * r->sample_rate);
+                r->rev_cut_inc = 1.0f / (float)((uint32_t)(0.025f * r->sample_rate) + 1u);
+                if (r->rev_state == 0u) r->rev_env = 0.0f;
+                r->rev_state = 1u;
+            } else {
+                /* rising/holding: keep current level, resume rising */
+                r->rev_hold_left = (uint32_t)((0.05f + 0.45f * r->cur.density) * r->sample_rate);
+                r->rev_state = 1u;
+            }
+            r->rev_last_trigger = r->sample_count;
+        }
     }
-    rev_rev_write(&r->rev, in);
-    float rev_sig = rev_rev_process(&r->rev);
+
+    /* step the reverse-gate envelope */
+    if (r->cur.gate > 0.01f) {
+        if (r->rev_state == 1u) {
+            r->rev_env += r->rev_env_inc;
+            if (r->rev_env >= 1.0f) { r->rev_env = 1.0f; r->rev_state = 2u; }
+        } else if (r->rev_state == 2u) {
+            if (r->rev_hold_left > 0u) r->rev_hold_left--;
+            else r->rev_state = 3u;
+        } else if (r->rev_state == 3u) {
+            r->rev_env -= r->rev_cut_inc;
+            if (r->rev_env <= 0.0f) { r->rev_env = 0.0f; r->rev_state = 0u; }
+        }
+    } else {
+        r->rev_env = 1.0f;
+        r->rev_state = 0u;
+    }
 
     float env = rev_env_value(&r->env);
-    /* level-independent dynamics: duck/gate use env relative to a slow peak,
-       so the same settings behave the same at any input level (pedal reality) */
+    /* level-independent dynamics: duck uses env relative to a slow peak */
     if (env > r->env_peak) r->env_peak = env;
     else r->env_peak *= 0.99997f;   /* ~0.65 s decay @44k1 */
     if (r->env_peak < 1e-4f) r->env_peak = 1e-4f;
@@ -162,7 +197,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     if (duck_gain < 0.0f) duck_gain = 0.0f;
     if (duck_gain > 1.0f) duck_gain = 1.0f;
     r->duck_gain_sm += (duck_gain - r->duck_gain_sm) * c;
-    float wet_in = rev_sig * r->duck_gain_sm;
+    float wet_in = in * r->duck_gain_sm;
 
     rev_fdn_set(&r->fdn, r->cur.decay, r->cur.tone, r->cur.mod);
     float wet_l, wet_r;
@@ -174,8 +209,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     wet_l = r->wet_lp_l;
     wet_r = r->wet_lp_r;
 
-    /* bass low-shelf: y = x + g*lp(x); shelf gain g = (bass-0.5)*1.2 in [-0.6,+0.6].
-       One-pole lp at tc=0.04 (~300 Hz @44k1) puts body in the low-mid region. */
+    /* bass low-shelf: y = x + g*lp(x); g = (bass-0.5)*1.2 in [-0.6,+0.6], ~300 Hz */
     {
         float btc = 0.04f;
         r->wet_bl_l += (wet_l - r->wet_bl_l) * btc;
@@ -194,21 +228,9 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     wet_l = mid + side * r->cur.width;
     wet_r = mid - side * r->cur.width;
 
-    /* gate on the reverb OUTPUT: the whole wet (reverse swell + FDN tail)
-       sounds only in the gaps, and is cut while the source is playing.
-       That is the classic gated-reverse character (input-side gating only
-       stopped new feed and let the tail ring over the notes -> smear). */
-    {
-        float gate_gain = 1.0f;
-        if (r->cur.gate > 0.01f) {
-            float th = 0.05f + 0.5f * r->cur.gate;
-            gate_gain = (env_n < th) ? 1.0f : 0.0f;
-        }
-        float gtc = rev_coeff_from_tc(0.02f * r->sample_rate); /* ~20 ms, click-free */
-        r->gate_gain_sm += (gate_gain - r->gate_gain_sm) * gtc;
-        wet_l *= r->gate_gain_sm;
-        wet_r *= r->gate_gain_sm;
-    }
+    /* reverse gate on the reverb OUTPUT: the whole wet swells then cuts */
+    wet_l *= r->rev_env;
+    wet_r *= r->rev_env;
 
     float mix = r->cur.mix;
     *out_l = in * (1.0f - mix) + wet_l * mix;
