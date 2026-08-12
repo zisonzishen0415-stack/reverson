@@ -30,6 +30,7 @@ endfunction()
 
 add_library(reverson_core STATIC core/rev_delay.c)
 target_sources(reverson_core PRIVATE core/rev_env.c)
+target_sources(reverson_core PRIVATE core/rev_rev.c)
 target_include_directories(reverson_core PUBLIC core)
 reverson_enable_warnings(reverson_core)
 
@@ -40,4 +41,5 @@ if(BUILD_TESTING)
     add_test(NAME test_util COMMAND test_util)
     reverson_add_test(test_delay)
     reverson_add_test(test_env)
+    reverson_add_test(test_rev)
 endif()
