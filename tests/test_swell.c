@@ -22,7 +22,7 @@ static float peak_window(const float* out_l, const float* out_r, int lo, int hi)
 
 int main(void) {
     float mem[REV_SWELL_BUF_LEN];
-    float diff_mem[2u * 2u * REV_SWELL_DIFF_LEN];
+    float diff_mem[3u * 2u * REV_SWELL_DIFF_LEN];
     RevSwell s;
     rev_swell_init(&s, mem, REV_SWELL_BUF_LEN, diff_mem, REV_SWELL_DIFF_LEN, 44100.0f);
     rev_swell_set(&s, 0.3333333f, 1.0f);   /* scale 1.0 */

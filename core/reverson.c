@@ -143,6 +143,53 @@ float Reverson_get_param(const Reverson* r, ReversonParam p) {
     return 0.0f;
 }
 
+void Reverson_map6(float mix, float rev, float space, float tone,
+                   float grain, float duck, ReversonParams* p) {
+    mix = rev_clampf(mix, 0.0f, 1.0f);
+    rev = rev_clampf(rev, 0.0f, 1.0f);
+    space = rev_clampf(space, 0.0f, 1.0f);
+    tone = rev_clampf(tone, 0.0f, 1.0f);
+    grain = rev_clampf(grain, 0.0f, 1.0f);
+    duck = rev_clampf(duck, 0.0f, 1.0f);
+
+    /* REV knob: wash -> gated reverse. gate eases in (slower at low end),
+       shape accelerates the attack, density (swell hold) shortens as the
+       reverse gets harder. */
+    float gate    = 0.90f * (0.35f * rev + 0.65f * rev * rev);
+    float shape   = 0.45f + 0.30f * rev;
+    float dens    = 0.95f - 0.50f * rev;
+
+    /* SPACE knob: decay lengthens (eased), the swell span follows it so the
+       shape stays proportional, and the tail gets a touch more LFO/width. */
+    float decay   = 0.45f + 0.55f * (space * space);
+    float revlen  = 0.25f + 0.50f * space;
+    float mod     = 0.20f + 0.25f * space;
+    float width   = 0.75f + 0.20f * space;
+
+    /* TONE knob: dark -> bright; bass shelf drops and saturation creeps in
+       as it brightens so it never gets harsh-thin. */
+    float tparam  = 0.12f + 0.88f * tone;
+    float bass    = 0.70f - 0.42f * tone;
+    float sat     = 0.08f + 0.22f * tone;
+
+    /* GRAIN knob: diffuser feedback, grainy (sharp echoes) -> smooth dense. */
+    float diff    = 0.10f + 0.60f * grain;
+
+    p->mix = mix;
+    p->decay = decay;
+    p->tone = tparam;
+    p->revlen = revlen;
+    p->duck = duck;
+    p->gate = gate;
+    p->shape = shape;
+    p->mod = mod;
+    p->sat = sat;
+    p->width = width;
+    p->density = dens;
+    p->bass = bass;
+    p->diffusion = diff;
+}
+
 void Reverson_map3(float c, float s, float t, ReversonParams* p) {
     c = rev_clampf(c, 0.0f, 1.0f);
     s = rev_clampf(s, 0.0f, 1.0f);
@@ -273,6 +320,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
         if (dfb > 0.7f) dfb = 0.7f;
         r->swell.diff_fb[0] = dfb;
         r->swell.diff_fb[1] = dfb * 0.9f;
+        r->swell.diff_fb[2] = dfb * 0.8f;
     }
     rev_swell_process(&r->swell, wet_in, &sw_l, &sw_r);
     wet_l += sw_l;

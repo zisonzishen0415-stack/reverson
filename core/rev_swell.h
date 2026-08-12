@@ -9,9 +9,10 @@
    ~= 19744 samples @44k1 / 21491 @48k, so 32768 leaves headroom. */
 #define REV_SWELL_BUF_LEN 32768u
 /* Feedback diffuser delay lines (Freeverb-style allpasses, 1024 each).
-   2 stages x 2 channels -> 4096 floats of extra state. */
+   3 stages x 2 channels, mutually-prime delays -> dense, aperiodic smear
+   that breaks up the discrete echo "grains". 6144 floats of extra state. */
 #define REV_SWELL_DIFF_LEN 1024u
-#define REV_SWELL_DIFF_TOTAL (2u * 2u * REV_SWELL_DIFF_LEN)
+#define REV_SWELL_DIFF_TOTAL (3u * 2u * REV_SWELL_DIFF_LEN)
 
 /* Classic reverse reverb, no non-causal buffering:
    a delay line with 13 read heads at exponentially increasing delays
@@ -23,9 +24,9 @@
    envelope ramp. */
 typedef struct {
     RevDelay line;
-    RevDelay diff[2][2];      /* [stage][channel] feedback allpass lines */
-    uint32_t diff_d[2];       /* allpass delays in samples (mutually prime) */
-    float diff_fb[2];         /* allpass feedback gains */
+    RevDelay diff[3][2];      /* [stage][channel] feedback allpass lines */
+    uint32_t diff_d[3];       /* allpass delays in samples (mutually prime) */
+    float diff_fb[3];         /* allpass feedback gains */
     float sample_rate;
     float samples_per_ms;
     uint32_t base_delay[REV_SWELL_TAPS];   /* samples at scale 1.0 */

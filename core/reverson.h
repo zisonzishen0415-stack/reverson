@@ -41,11 +41,18 @@ float Reverson_get_param(const Reverson* r, ReversonParam p);
 /* process one mono sample -> stereo out */
 void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
 
-/* 3-knob ergonomic mapping: CHAR (dense wash -> shoegaze -> gated reverse),
-   SPACE (small -> huge), TONE (dark -> bright), all in [0,1]. Every internal
-   param is dominated by one axis, so any point in the cube is musically
-   coherent. ZDL-safe (polynomials only, no div/sin/pow). */
-void Reverson_map3(float c, float s, float t, ReversonParams* p);
+/* 6-knob mapping (two pages x 3). Every internal param is owned by exactly
+   one knob so the knobs never fight:
+     mix   -> wet (direct)
+     rev   -> gate, shape, density      (wash -> gated reverse)
+     space -> decay, revlen, mod, width (small -> huge)
+     tone  -> tone, bass, sat           (dark -> bright)
+     grain -> diffusion                 (grainy -> smooth)
+     duck  -> duck (direct)
+   All in [0,1]; curves shaped so any combination stays musical.
+   ZDL-safe (polynomials only, no div/sin/pow). */
+void Reverson_map6(float mix, float rev, float space, float tone,
+                   float grain, float duck, ReversonParams* p);
 #ifdef __cplusplus
 }
 #endif

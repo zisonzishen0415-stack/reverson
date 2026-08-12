@@ -212,23 +212,30 @@ int main(int argc, char** argv) {
         if (!core) { fprintf(stderr, "init failed\n"); return 1; }
         apply_preset(core, pr);
 
-        /* 3-knob ergonomic mapping: if any of char/space/tone given, apply
-           the whole mapped set first (later key=value overrides win). */
+        /* 6-knob mapping (two pages x 3): if any of mix/rev/space/tone/
+           grain/duck given, apply the whole mapped set first (later
+           key=value overrides win). */
         {
-            float c3 = -1.0f, s3 = -1.0f, t3 = -1.0f;
+            float m6 = -1.0f, r6 = -1.0f, s6 = -1.0f, t6 = -1.0f, g6 = -1.0f, d6 = -1.0f;
             for (int oi = 7; oi < argc; ++oi) {
-                char k3[32]; float v3;
-                if (sscanf(argv[oi], "%31[^=]=%f", k3, &v3) != 2) continue;
-                if      (strcmp(k3, "char") == 0)  c3 = v3;
-                else if (strcmp(k3, "space") == 0) s3 = v3;
-                else if (strcmp(k3, "tone") == 0)  t3 = v3;
+                char k6[32]; float v6;
+                if (sscanf(argv[oi], "%31[^=]=%f", k6, &v6) != 2) continue;
+                if      (strcmp(k6, "mix") == 0)   m6 = v6;
+                else if (strcmp(k6, "rev") == 0)   r6 = v6;
+                else if (strcmp(k6, "space") == 0) s6 = v6;
+                else if (strcmp(k6, "tone") == 0)  t6 = v6;
+                else if (strcmp(k6, "grain") == 0) g6 = v6;
+                else if (strcmp(k6, "duck") == 0)  d6 = v6;
             }
-            if (c3 >= 0.0f || s3 >= 0.0f || t3 >= 0.0f) {
-                if (c3 < 0.0f) c3 = 0.5f;
-                if (s3 < 0.0f) s3 = 0.5f;
-                if (t3 < 0.0f) t3 = 0.5f;
+            if (m6 >= 0.0f || r6 >= 0.0f || s6 >= 0.0f || t6 >= 0.0f || g6 >= 0.0f || d6 >= 0.0f) {
+                if (m6 < 0.0f) m6 = 0.65f;
+                if (r6 < 0.0f) r6 = 0.5f;
+                if (s6 < 0.0f) s6 = 0.6f;
+                if (t6 < 0.0f) t6 = 0.5f;
+                if (g6 < 0.0f) g6 = 0.5f;
+                if (d6 < 0.0f) d6 = 0.4f;
                 ReversonParams mp;
-                Reverson_map3(c3, s3, t3, &mp);
+                Reverson_map6(m6, r6, s6, t6, g6, d6, &mp);
                 Reverson_set_param(core, REVERSON_PARAM_MIX, mp.mix);
                 Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
                 Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
@@ -258,8 +265,9 @@ int main(int argc, char** argv) {
                 apply_preset(core, &MODES[mi - 1]);
                 continue;
             }
-            if (strcmp(k, "char") == 0 || strcmp(k, "space") == 0 || strcmp(k, "tone") == 0)
-                continue;   /* handled by the 3-knob mapping block above */
+            if (strcmp(k, "mix") == 0 || strcmp(k, "rev") == 0 || strcmp(k, "space") == 0
+                || strcmp(k, "tone") == 0 || strcmp(k, "grain") == 0 || strcmp(k, "duck") == 0)
+                continue;   /* handled by the 6-knob mapping block above */
             ReversonParam par;
             if      (strcmp(k, "mix") == 0)     par = REVERSON_PARAM_MIX;
             else if (strcmp(k, "decay") == 0)   par = REVERSON_PARAM_DECAY;
