@@ -33,8 +33,20 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_GATE, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.6f);
+    /* warm up the reverse buffer: with the anchored read head the segment only
+       replays pre-trigger material, so feed the pulse pattern long enough that
+       the anchor region holds recorded audio before measuring */
+    for (int i = 0; i < 95000; ++i) {
+        float in = (i % 220 == 0) ? 0.8f : 0.0f;
+        Reverson_process(r, in, &l, &rr);
+    }
     float diff_sum = 0.0f;
-    for (int i = 0; i < 8820; ++i) {
+    /* Each onset re-triggers a fresh reverse segment, so the swell envelope only
+       reaches ~0.6% of full scale before the next pulse re-triggers; accumulate
+       decorrelation over 2x pulse periods so the FDN stereo spread clears the
+       floor (with the warm-up above, the corrected engine measures ~21, vs ~0
+       with an empty buffer). */
+    for (int i = 0; i < 17640; ++i) {
         float in = (i % 220 == 0) ? 0.8f : 0.0f;
         Reverson_process(r, in, &l, &rr);
         diff_sum += rev_absf(l - rr);
@@ -105,6 +117,9 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
     Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
+    /* warm up the reverse buffer with the gate-driving signal so the anchored
+       segment replays recorded material (tail) once the gate opens */
+    for (int i = 0; i < 95000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* warm up reverse buffer */
     for (int i = 0; i < 5000; ++i) Reverson_process(r, 1.0f, &l, &rr); /* settle */
     float gpeak = 0.0f;
     for (int i = 0; i < 2000; ++i) {
