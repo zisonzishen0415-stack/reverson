@@ -10,3 +10,8 @@
 # Downloaded demo sources and generated renders (regenerate with reverson_render)
 /assets/
 /out/
+
+# Third-party sample material (stock ZDLs / extracted docs, not part of the project)
+/zdl_samples/
+/zoom_pdf_extracted.txt
+/Zoom_effect_editing_instructions.pdf
