@@ -2,6 +2,7 @@
 #include <string.h>
 
 void rev_delay_init(RevDelay* d, float* mem, uint32_t len_pow2) {
+    /* contract: len_pow2 must be > 0 and a power of two */
     d->buf = mem;
     d->len = len_pow2;
     d->mask = len_pow2 - 1u;

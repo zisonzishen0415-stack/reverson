@@ -11,9 +11,14 @@ typedef struct {
     uint32_t idx; /* write index */
 } RevDelay;
 
+/* len_pow2 must be > 0 and a power of two. */
 void rev_delay_init(RevDelay* d, float* mem, uint32_t len_pow2);
 void rev_delay_clear(RevDelay* d);
 void rev_delay_write(RevDelay* d, float v);
-/* delay_samples in [1, len); returns 0.0 while the line has no history */
+/* delay_samples in [0, len-1]; 0 is the sample most recently written by
+   rev_delay_write, len-1 is the oldest sample in the line.
+   Reads with delay_samples >= len alias to older slots; the caller must
+   guarantee history by clearing or pre-filling the buffer, the function
+   does not auto-zero-pad. */
 float rev_delay_read(const RevDelay* d, uint32_t delay_samples);
 #endif
