@@ -26,6 +26,42 @@ int main(void) {
     rev_env_process(&e, 0.0f);
     CHECK(rev_env_value(&e) < 1.0f);
 
+    /* onset re-arms after release: the fast onset envelope must decay below
+       threshold between notes (16ths at 120 BPM are 125 ms apart) */
+    rev_env_init(&e, 44100.0f);
+    int rearm_onsets = 0;
+    for (int i = 0; i < 500; ++i) {
+        rev_env_process(&e, 1.0f);
+        rearm_onsets += rev_env_onset(&e);
+    }
+    for (int i = 0; i < 4410; ++i) rev_env_process(&e, 0.0f);  /* ~100 ms gap */
+    for (int i = 0; i < 500; ++i) {
+        rev_env_process(&e, 1.0f);
+        rearm_onsets += rev_env_onset(&e);
+    }
+    CHECK(rearm_onsets == 2);
+
+    /* release to silence: after a full-scale step, sustained silence must
+       bring the main envelope down to the noise floor */
+    rev_env_init(&e, 44100.0f);
+    for (int i = 0; i < 4410; ++i) rev_env_process(&e, 1.0f);
+    for (int i = 0; i < 88200; ++i) rev_env_process(&e, 0.0f);  /* 2 s */
+    CHECK(rev_env_value(&e) < 0.001f);
+
+    /* threshold boundary: sub-threshold level never triggers an onset */
+    rev_env_init(&e, 44100.0f);
+    for (int i = 0; i < 1000; ++i) rev_env_process(&e, 0.005f);
+    CHECK(rev_env_onset(&e) == 0);
+
+    /* just above threshold triggers exactly one onset */
+    rev_env_init(&e, 44100.0f);
+    int boundary_onsets = 0;
+    for (int i = 0; i < 1000; ++i) {
+        rev_env_process(&e, 0.0105f);
+        boundary_onsets += rev_env_onset(&e);
+    }
+    CHECK(boundary_onsets == 1);
+
     if (fails == 0) { printf("test_env PASS\n"); return 0; }
     printf("test_env FAILED (%d)\n", fails);
     return 1;
