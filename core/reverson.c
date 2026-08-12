@@ -71,6 +71,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->target.width = 0.80f;
     r->target.density = 0.75f;   /* swell hold time */
     r->target.bass = 0.55f;      /* slight low-mid body */
+    r->target.diffusion = 0.30f; /* swell diffuser feedback: 0 = sharp reverse, ~0.7 = dense/smooth */
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     r->duck_gain_sm = 1.0f;
@@ -119,6 +120,7 @@ void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
         case REVERSON_PARAM_WIDTH: r->target.width = v; break;
         case REVERSON_PARAM_DENSITY:r->target.density = v; break;
         case REVERSON_PARAM_BASS:   r->target.bass = v; break;
+        case REVERSON_PARAM_DIFFUSION:r->target.diffusion = v; break;
     }
 }
 
@@ -136,8 +138,45 @@ float Reverson_get_param(const Reverson* r, ReversonParam p) {
         case REVERSON_PARAM_WIDTH: return r->target.width;
         case REVERSON_PARAM_DENSITY:return r->target.density;
         case REVERSON_PARAM_BASS:   return r->target.bass;
+        case REVERSON_PARAM_DIFFUSION:return r->target.diffusion;
     }
     return 0.0f;
+}
+
+void Reverson_map3(float c, float s, float t, ReversonParams* p) {
+    c = rev_clampf(c, 0.0f, 1.0f);
+    s = rev_clampf(s, 0.0f, 1.0f);
+    t = rev_clampf(t, 0.0f, 1.0f);
+    /* CHAR axis: wash -> shoegaze -> gated reverse */
+    float gate    = 0.90f * (0.35f * c + 0.65f * c * c);
+    float diff    = 0.55f - 0.40f * c;
+    float shape   = 0.45f + 0.30f * c;
+    float dens    = 0.95f - 0.50f * c;
+    float duck    = 0.15f + 0.55f * (4.0f * c * (1.0f - c));
+    /* SPACE axis */
+    float decay   = 0.45f + 0.55f * s;
+    float revlen  = 0.25f + 0.50f * s;
+    float mod     = 0.20f + 0.25f * s;
+    float width   = 0.75f + 0.20f * s;
+    float mix     = 0.55f + 0.35f * s;
+    /* TONE axis */
+    float tone    = 0.12f + 0.88f * t;
+    float bass    = 0.70f - 0.42f * t;
+    float sat     = 0.08f + 0.22f * t;
+
+    p->mix = mix;
+    p->decay = decay;
+    p->tone = tone;
+    p->revlen = revlen;
+    p->duck = duck;
+    p->gate = gate;
+    p->shape = shape;
+    p->mod = mod;
+    p->sat = sat;
+    p->width = width;
+    p->density = dens;
+    p->bass = bass;
+    p->diffusion = diff;
 }
 
 void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
@@ -154,6 +193,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->cur.width += (r->target.width - r->cur.width) * c;
     r->cur.density += (r->target.density - r->cur.density) * c;
     r->cur.bass += (r->target.bass - r->cur.bass) * c;
+    r->cur.diffusion += (r->target.diffusion - r->cur.diffusion) * c;
 
     r->sample_count++;
     rev_env_process(&r->env, in);
@@ -227,6 +267,13 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
        (0 -> pure dense bed, 1 -> full reverse crescendo). */
     float sw_l, sw_r;
     rev_swell_set(&r->swell, r->cur.revlen, r->cur.gate);
+    /* Diffusion knob: diffuser feedback, 0 = sharp reverse gate .. ~0.7 = dense */
+    {
+        float dfb = r->cur.diffusion;
+        if (dfb > 0.7f) dfb = 0.7f;
+        r->swell.diff_fb[0] = dfb;
+        r->swell.diff_fb[1] = dfb * 0.9f;
+    }
     rev_swell_process(&r->swell, wet_in, &sw_l, &sw_r);
     wet_l += sw_l;
     wet_r += sw_r;

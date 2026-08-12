@@ -34,24 +34,35 @@ typedef struct {
 
 typedef struct {
     const char* name;
-    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass;
+    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass, diffusion;
 } Preset;
 
 static const Preset PRESETS[] = {
-    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.00f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f },
-    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f },
-    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f },
-    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.00f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f },
-    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.00f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f },
-    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f },
-    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f },
-    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.00f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f },
-    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.00f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f },
-    { "tight",   0.70f, 0.75f, 0.45f, 0.15f, 0.15f, 0.75f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f },
-    { "gated",   0.65f, 0.80f, 0.45f, 0.20f, 0.10f, 0.90f, 0.50f, 0.35f, 0.15f, 0.85f, 0.75f, 0.60f },
-    { "rev",     0.80f, 0.85f, 0.40f, 0.40f, 0.30f, 0.45f, 0.50f, 0.60f, 0.20f, 0.90f, 0.85f, 0.65f },
+    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.00f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f, 0.30f },
+    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f, 0.30f },
+    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f, 0.30f },
+    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.00f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f, 0.30f },
+    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.00f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f, 0.30f },
+    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f, 0.30f },
+    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f, 0.30f },
+    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.00f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f, 0.30f },
+    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.00f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
+    { "tight",   0.70f, 0.75f, 0.45f, 0.15f, 0.15f, 0.75f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
+    { "gated",   0.65f, 0.80f, 0.45f, 0.20f, 0.10f, 0.90f, 0.50f, 0.35f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
+    { "rev",     0.80f, 0.85f, 0.40f, 0.40f, 0.30f, 0.45f, 0.50f, 0.60f, 0.20f, 0.90f, 0.85f, 0.65f, 0.30f },
 };
 #define NUM_PRESETS ((unsigned)(sizeof(PRESETS) / sizeof(PRESETS[0])))
+
+/* Mode 1..5 sub-presets: a single knob switches whole character sets.
+   mix decay tone revlen duck gate shape mod sat width density bass diffusion */
+static const Preset MODES[5] = {
+    { "Wash",    0.60f, 0.85f, 0.45f, 0.45f, 0.35f, 0.00f, 0.50f, 0.30f, 0.15f, 0.90f, 0.95f, 0.55f, 0.35f },
+    { "Reverse", 0.80f, 0.75f, 0.40f, 0.40f, 0.30f, 0.65f, 0.70f, 0.30f, 0.15f, 0.90f, 0.80f, 0.55f, 0.15f },
+    { "Gated",   0.70f, 0.70f, 0.45f, 0.25f, 0.20f, 0.90f, 0.50f, 0.30f, 0.15f, 0.85f, 0.35f, 0.55f, 0.20f },
+    { "Shoegaze",0.80f, 0.85f, 0.40f, 0.45f, 0.45f, 0.45f, 0.60f, 0.30f, 0.15f, 0.90f, 0.85f, 0.55f, 0.30f },
+    { "Space",   0.85f, 1.00f, 0.35f, 0.60f, 0.10f, 0.20f, 0.50f, 0.35f, 0.12f, 0.95f, 1.00f, 0.60f, 0.50f },
+};
+#define NUM_MODES 5u
 
 static int read_wav(const char* path, Audio* a) {
     FILE* f = fopen(path, "rb");
@@ -138,6 +149,7 @@ static void apply_preset(Reverson* r, const Preset* p) {
     Reverson_set_param(r, REVERSON_PARAM_WIDTH, p->width);
     Reverson_set_param(r, REVERSON_PARAM_DENSITY, p->density);
     Reverson_set_param(r, REVERSON_PARAM_BASS, p->bass);
+    Reverson_set_param(r, REVERSON_PARAM_DIFFUSION, p->diffusion);
 }
 
 static float peak_of(const float* x, unsigned n) {
@@ -199,12 +211,55 @@ int main(int argc, char** argv) {
         Reverson* core = Reverson_init(mem, need, (float)a.rate);
         if (!core) { fprintf(stderr, "init failed\n"); return 1; }
         apply_preset(core, pr);
+
+        /* 3-knob ergonomic mapping: if any of char/space/tone given, apply
+           the whole mapped set first (later key=value overrides win). */
+        {
+            float c3 = -1.0f, s3 = -1.0f, t3 = -1.0f;
+            for (int oi = 7; oi < argc; ++oi) {
+                char k3[32]; float v3;
+                if (sscanf(argv[oi], "%31[^=]=%f", k3, &v3) != 2) continue;
+                if      (strcmp(k3, "char") == 0)  c3 = v3;
+                else if (strcmp(k3, "space") == 0) s3 = v3;
+                else if (strcmp(k3, "tone") == 0)  t3 = v3;
+            }
+            if (c3 >= 0.0f || s3 >= 0.0f || t3 >= 0.0f) {
+                if (c3 < 0.0f) c3 = 0.5f;
+                if (s3 < 0.0f) s3 = 0.5f;
+                if (t3 < 0.0f) t3 = 0.5f;
+                ReversonParams mp;
+                Reverson_map3(c3, s3, t3, &mp);
+                Reverson_set_param(core, REVERSON_PARAM_MIX, mp.mix);
+                Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
+                Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
+                Reverson_set_param(core, REVERSON_PARAM_REVLEN, mp.revlen);
+                Reverson_set_param(core, REVERSON_PARAM_DUCK, mp.duck);
+                Reverson_set_param(core, REVERSON_PARAM_GATE, mp.gate);
+                Reverson_set_param(core, REVERSON_PARAM_SHAPE, mp.shape);
+                Reverson_set_param(core, REVERSON_PARAM_MOD, mp.mod);
+                Reverson_set_param(core, REVERSON_PARAM_SAT, mp.sat);
+                Reverson_set_param(core, REVERSON_PARAM_WIDTH, mp.width);
+                Reverson_set_param(core, REVERSON_PARAM_DENSITY, mp.density);
+                Reverson_set_param(core, REVERSON_PARAM_BASS, mp.bass);
+                Reverson_set_param(core, REVERSON_PARAM_DIFFUSION, mp.diffusion);
+            }
+        }
+
         for (int oi = 7; oi < argc; ++oi) {   /* key=value param overrides */
             char k[32]; float v = 0.0f;
             if (sscanf(argv[oi], "%31[^=]=%f", k, &v) != 2) {
                 fprintf(stderr, "bad override '%s' (use key=value)\n", argv[oi]);
                 return 1;
             }
+            if (strcmp(k, "mode") == 0) {
+                int mi = (int)v;
+                if (mi < 1) mi = 1;
+                if (mi > (int)NUM_MODES) mi = (int)NUM_MODES;
+                apply_preset(core, &MODES[mi - 1]);
+                continue;
+            }
+            if (strcmp(k, "char") == 0 || strcmp(k, "space") == 0 || strcmp(k, "tone") == 0)
+                continue;   /* handled by the 3-knob mapping block above */
             ReversonParam par;
             if      (strcmp(k, "mix") == 0)     par = REVERSON_PARAM_MIX;
             else if (strcmp(k, "decay") == 0)   par = REVERSON_PARAM_DECAY;
@@ -218,6 +273,7 @@ int main(int argc, char** argv) {
             else if (strcmp(k, "width") == 0)   par = REVERSON_PARAM_WIDTH;
             else if (strcmp(k, "density") == 0) par = REVERSON_PARAM_DENSITY;
             else if (strcmp(k, "bass") == 0)    par = REVERSON_PARAM_BASS;
+            else if (strcmp(k, "diff") == 0)   par = REVERSON_PARAM_DIFFUSION;
             else { fprintf(stderr, "unknown param '%s'\n", k); return 1; }
             Reverson_set_param(core, par, v);
         }
