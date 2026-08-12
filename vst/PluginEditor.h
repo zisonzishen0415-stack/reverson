@@ -39,6 +39,6 @@ private:
     int currentPage = 0;
     int focusedSlot = 0;
 
-    static const char* ids[4][3];
-    static const char* names[4][3];
+    static const char* ids[2][3];
+    static const char* names[2][3];
 };

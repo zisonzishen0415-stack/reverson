@@ -26,17 +26,13 @@ public:
     }
 };
 
-const char* ReversonAudioProcessorEditor::ids[4][3] = {
-    {"mix", "decay", "tone"},
-    {"revlen", "duck", "gate"},
-    {"density", "bass", "shape"},
-    {"mod", "sat", "width"}
+const char* ReversonAudioProcessorEditor::ids[2][3] = {
+    {"mix", "rev", "space"},
+    {"tone", "grain", "duck"}
 };
-const char* ReversonAudioProcessorEditor::names[4][3] = {
-    {"Mix", "Decay", "Tone"},
-    {"RevLen", "Duck", "Gate"},
-    {"Density", "Bass", "Shape"},
-    {"Mod", "Sat", "Width"}
+const char* ReversonAudioProcessorEditor::names[2][3] = {
+    {"Mix", "Rev", "Space"},
+    {"Tone", "Grain", "Duck"}
 };
 
 static const juce::Colour lcdBg(0xff0d2239);     /* deep blue LCD backlight */
@@ -48,7 +44,7 @@ static const juce::Colour bezel(0xff4a4e57);     /* screen bezel */
 ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p) {
     pageButton.setButtonText("PAGE");
-    pageButton.onClick = [this] { setPage((currentPage + 1) % 4); };
+    pageButton.onClick = [this] { setPage((currentPage + 1) % 2); };
     addAndMakeVisible(pageButton);
 
     bypassButton.setButtonText("BYPASS");
@@ -87,8 +83,13 @@ void ReversonAudioProcessorEditor::setPage(int page) {
     attachments[1].reset();
     attachments[2].reset();
     for (int i = 0; i < 3; ++i) {
-        attachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            processor.apvts, ids[currentPage][i], knobs[i]);
+        attachments[i].reset();
+        bool has = (ids[currentPage][i][0] != '\0');
+        knobs[i].setEnabled(has);
+        if (has) {
+            attachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                processor.apvts, ids[currentPage][i], knobs[i]);
+        }
     }
     repaint();
 }

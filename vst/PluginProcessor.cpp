@@ -9,18 +9,14 @@ ReversonAudioProcessor::createParameterLayout() {
         layout.add(std::make_unique<juce::AudioParameterFloat>(
             id, name, juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), def));
     };
-    add("mix", "Mix", 0.55f);
-    add("decay", "Decay", 0.60f);
-    add("tone", "Tone", 0.60f);
-    add("revlen", "RevLen", 0.40f);
-    add("duck", "Duck", 0.50f);
-    add("gate", "Gate", 0.00f);
-    add("density", "Density", 0.75f);
-    add("bass", "Bass", 0.55f);
-    add("shape", "Shape", 0.33f);
-    add("mod", "Mod", 0.35f);
-    add("sat", "Sat", 0.10f);
-    add("width", "Width", 0.80f);
+    /* 6-knob ergonomic UI; the 13 internal params are derived via
+       Reverson_map6 so the knobs never fight. */
+    add("mix", "Mix", 0.65f);
+    add("rev", "Rev", 0.50f);
+    add("space", "Space", 0.60f);
+    add("tone", "Tone", 0.50f);
+    add("grain", "Grain", 0.60f);
+    add("duck", "Duck", 0.40f);
     layout.add(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     return layout;
 }
@@ -46,34 +42,17 @@ void ReversonAudioProcessor::releaseResources() {
 void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
     auto* pMix = apvts.getRawParameterValue("mix");
-    auto* pDecay = apvts.getRawParameterValue("decay");
+    auto* pRev = apvts.getRawParameterValue("rev");
+    auto* pSpace = apvts.getRawParameterValue("space");
     auto* pTone = apvts.getRawParameterValue("tone");
-    auto* pRevLen = apvts.getRawParameterValue("revlen");
+    auto* pGrain = apvts.getRawParameterValue("grain");
     auto* pDuck = apvts.getRawParameterValue("duck");
-    auto* pGate = apvts.getRawParameterValue("gate");
-    auto* pDensity = apvts.getRawParameterValue("density");
-    auto* pBass = apvts.getRawParameterValue("bass");
-    auto* pShape = apvts.getRawParameterValue("shape");
-    auto* pMod = apvts.getRawParameterValue("mod");
-    auto* pSat = apvts.getRawParameterValue("sat");
-    auto* pWidth = apvts.getRawParameterValue("width");
     auto* pBypass = apvts.getRawParameterValue("bypass");
 
     if (core == nullptr) { buffer.clear(); return; }
     if (*pBypass > 0.5f) return;  /* bypass: dry passthrough (VST3 processes in place) */
 
-    Reverson_set_param(core, REVERSON_PARAM_MIX, *pMix);
-    Reverson_set_param(core, REVERSON_PARAM_DECAY, *pDecay);
-    Reverson_set_param(core, REVERSON_PARAM_TONE, *pTone);
-    Reverson_set_param(core, REVERSON_PARAM_REVLEN, *pRevLen);
-    Reverson_set_param(core, REVERSON_PARAM_DUCK, *pDuck);
-    Reverson_set_param(core, REVERSON_PARAM_GATE, *pGate);
-    Reverson_set_param(core, REVERSON_PARAM_DENSITY, *pDensity);
-    Reverson_set_param(core, REVERSON_PARAM_BASS, *pBass);
-    Reverson_set_param(core, REVERSON_PARAM_SHAPE, *pShape);
-    Reverson_set_param(core, REVERSON_PARAM_MOD, *pMod);
-    Reverson_set_param(core, REVERSON_PARAM_SAT, *pSat);
-    Reverson_set_param(core, REVERSON_PARAM_WIDTH, *pWidth);
+    Reverson_set_6knob(core, *pMix, *pRev, *pSpace, *pTone, *pGrain, *pDuck);
 
     const int numSamples = buffer.getNumSamples();
     const float* in = buffer.getReadPointer(0);
