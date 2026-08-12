@@ -71,6 +71,20 @@ int main(void) {
         rev_rev_write(&r, (float)i);
     }
 
+    /* live interleaved: writes continue while reading; the anchored read head must
+       still replay the recorded ramp reversed (a frozen head would fail this) */
+    rev_rev_clear(&r);
+    for (int i = 0; i < 10; ++i) rev_rev_write(&r, (float)i);   /* record 0..9 */
+    rev_rev_trigger(&r, 10u, 1u, 1);                            /* anchor = write_idx (10) */
+    float live[24];
+    for (int i = 0; i < 24; ++i) {
+        rev_rev_write(&r, (float)(100 + i));                    /* writes keep advancing write_idx */
+        live[i] = rev_rev_process(&r);
+    }
+    CLOSE(live[0], 0.9f, 0.15f);   /* buf[anchor-1] = 9, env 0.1 */
+    CLOSE(live[9], 0.0f, 0.05f);   /* segment end: env falls to 0 at the seam */
+    CLOSE(live[10], live[0], 0.2f);/* wrap: segment loops, starts again */
+
     if (fails == 0) { printf("test_rev PASS\n"); return 0; }
     printf("test_rev FAILED (%d)\n", fails);
     return 1;

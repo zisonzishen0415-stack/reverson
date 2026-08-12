@@ -134,6 +134,8 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
 
     float env = rev_env_value(&r->env);
     float duck_gain = 1.0f - r->cur.duck * env;
+    if (duck_gain < 0.0f) duck_gain = 0.0f;
+    if (duck_gain > 1.0f) duck_gain = 1.0f;
     if (r->cur.gate > 0.01f) {
         float th = 0.05f + 0.5f * r->cur.gate;
         float g = (env < th) ? 1.0f : 0.0f;

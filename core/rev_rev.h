@@ -17,12 +17,19 @@
 
    The swell envelope rises toward 1 over the segment body and falls to 0
    across the crossfade window, so the output at the segment seam is ~0 on
-   both sides (click-free wrap). */
+   both sides (click-free wrap).
+
+   The read head is anchored at trigger time (anchor = write_idx), so live
+   recording does not move it; the segment replays the material ending at
+   anchor-1 in reverse and loops that anchored material until the next
+   trigger re-anchors. */
+
 typedef struct {
     float* buf;
     uint32_t buf_len;
     uint32_t mask;
     uint32_t write_idx;
+    uint32_t anchor;  /* read-head anchor captured at trigger; the segment replays material ending at anchor-1 */
     uint32_t seg_pos;
     uint32_t seg_len;
     float seg_peak;

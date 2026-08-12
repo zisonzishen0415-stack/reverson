@@ -7,6 +7,7 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
     r->buf_len = buf_len_pow2;
     r->mask = buf_len_pow2 - 1u;
     r->write_idx = 0u;
+    r->anchor = 0u;
     r->seg_pos = 0u;
     r->seg_len = 1u;
     r->seg_peak = 0.0f;
@@ -24,6 +25,7 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
 void rev_rev_clear(RevRev* r) {
     memset(r->buf, 0, r->buf_len * sizeof(float));
     r->write_idx = 0u;
+    r->anchor = 0u;
     r->seg_pos = 0u;
     r->seg_peak = 0.0f;
     r->norm_gain = 1.0f;
@@ -48,6 +50,7 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     r->env_inc = 1.0f / (float)(r->seg_len - r->cross_len + 1u); /* rise over rise-window */
     r->shape = (shape < 1) ? 1 : ((shape > 4) ? 4 : shape);
     r->norm_target = rev_clampf(0.9f / (r->seg_peak + 1e-6f), 0.1f, 3.0f);
+    r->anchor = r->write_idx;
 }
 
 void rev_rev_write(RevRev* r, float x) {
@@ -59,7 +62,11 @@ void rev_rev_write(RevRev* r, float x) {
 }
 
 float rev_rev_process(RevRev* r) {
-    uint32_t read_idx = (r->write_idx - 1u - r->seg_pos) & r->mask;
+    /* Read head is anchored at trigger time (r->anchor = write_idx then), so
+       live recording does not move it; at wrap seg_pos resets to 0 and the
+       segment LOOPS the same anchored material until the next trigger
+       re-anchors. */
+    uint32_t read_idx = (r->anchor - 1u - r->seg_pos) & r->mask;
     float rev = r->buf[read_idx];
 
     float env = r->env;
