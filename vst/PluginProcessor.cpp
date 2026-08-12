@@ -38,7 +38,7 @@ void ReversonAudioProcessor::releaseResources() {
 
 void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
-    if (core == nullptr) return;
+    if (core == nullptr) { buffer.clear(); return; }
 
     auto* pMix = apvts.getRawParameterValue("mix");
     auto* pDecay = apvts.getRawParameterValue("decay");
@@ -61,9 +61,23 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     for (int i = 0; i < numSamples; ++i) {
         float l = 0.0f, r = 0.0f;
         Reverson_process(core, in[i], &l, &r);
-        outL[i] = l;
-        if (outR != nullptr) outR[i] = r;
+        if (outR != nullptr) {
+            outL[i] = l;
+            outR[i] = r;
+        } else {
+            outL[i] = 0.5f * (l + r);
+        }
     }
+}
+
+bool ReversonAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::mono()
+        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    return true;
 }
 
 juce::AudioProcessorEditor* ReversonAudioProcessor::createEditor() {
