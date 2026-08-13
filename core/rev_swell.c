@@ -3,6 +3,9 @@
  * and exponentially increasing gains (ratio 1.25). Per-tap stereo pan
  * (L/R alternate) gives natural width. 3 one-pole allpasses diffuse the taps
  * so it reads as "reverb" not "delay"; allpass is unit magnitude (no boost).
+ * A slow triangle LFO dithers each tap's read position with per-tap phase
+ * offsets (Mod knob): the echo comb slowly decorrelates -> a living tail
+ * that reads as reverb, and far taps move more than near taps.
  */
 #include "rev_swell.h"
 #include "rev_util.h"
@@ -52,6 +55,20 @@ void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2,
     }
     s->scale = 1.0f;
     s->amount = 0.0f;
+    /* slow LFO (one cycle ~4 s), per-tap phases spread by a golden-ish step
+       (0.236) so the taps never move in lockstep; additive phase math only
+       (no fmod - ZDL-safe). */
+    s->lfo_phase = 0.0f;
+    s->lfo_inc = 0.25f / sample_rate;
+    {
+        float off = 0.0f;
+        for (int i = 0; i < REV_SWELL_TAPS; ++i) {
+            s->lfo_off[i] = off;
+            off += 0.236f;
+            if (off >= 1.0f) off -= 1.0f;
+        }
+    }
+    s->mod_depth = 0.0f;
     s->ap_g[0] = 0.40f;
     s->ap_g[1] = 0.50f;
     s->ap_g[2] = 0.60f;
@@ -65,6 +82,7 @@ void rev_swell_clear(RevSwell* s) {
         for (int ch = 0; ch < 2; ++ch)
             rev_delay_clear(&s->diff[st][ch]);
     memset(s->ap, 0, sizeof(s->ap));
+    s->lfo_phase = 0.0f;
 }
 
 void rev_swell_set(RevSwell* s, float revlen, float amount) {
@@ -74,16 +92,30 @@ void rev_swell_set(RevSwell* s, float revlen, float amount) {
     s->amount = amount;
 }
 
+void rev_swell_set_mod(RevSwell* s, float mod) {
+    mod = rev_clampf(mod, 0.0f, 1.0f);
+    /* depth as a fraction of each tap's own delay: far taps breathe more,
+       near taps stay defined. Max ~2.5% of the delay (~5.6 ms on tap 13). */
+    s->mod_depth = 0.025f * mod;
+}
+
 void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r) {
     rev_delay_write(&s->line, in);
     float l = 0.0f, r = 0.0f;
     for (int i = 0; i < REV_SWELL_TAPS; ++i) {
-        uint32_t d = (uint32_t)((float)s->base_delay[i] * s->scale);
+        float ph = s->lfo_phase + s->lfo_off[i];
+        if (ph > 1.0f) ph -= 1.0f;
+        float tri = 1.0f - 4.0f * rev_absf(ph - 0.5f);  /* -1..1 */
+        float t = tri * 0.5f + 0.5f;                     /* 0..1 */
+        uint32_t shift = (uint32_t)(s->mod_depth * t * (float)s->base_delay[i]);
+        uint32_t d = (uint32_t)((float)s->base_delay[i] * s->scale) + shift;
         if (d >= s->line.len) d = s->line.len - 1u;   /* guard: never alias */
         float v = rev_delay_read(&s->line, d);
         l += v * (s->base_gain_l[i] * s->amount);
         r += v * (s->base_gain_r[i] * s->amount);
     }
+    s->lfo_phase += s->lfo_inc;
+    if (s->lfo_phase > 1.0f) s->lfo_phase -= 1.0f;
     /* Feedback diffusion (Freeverb-style allpass): fills the gaps between
        taps so the swell reads as reverb, not a discrete echo line. Each tap
        becomes a decaying echo train; y = -x + buf[n-D], buf[n] = x + fb*buf[n-D]. */

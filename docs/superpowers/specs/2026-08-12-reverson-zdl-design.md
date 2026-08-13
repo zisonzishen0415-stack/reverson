@@ -99,16 +99,19 @@ flowchart LR
 - 态度层：湿声饱和/wobble，干声保持干净
 - 隐藏项：参数平滑、限幅、出厂预设（Slowdive / DIIV / Swell / Glitch / Tape）
 
-## 5. 参数设计
+## 5. 参数设计（当前已落地：6 旋钮两页 + 第 3 页模式）
+
+13 个内部参数由 6 个联动旋钮驱动（每个内部参数只归一个旋钮，互不打架），
+与 VST 完全一致；G1on 有 3 页 x 3 = 9 旋钮，第 3 页放 5 档模式切换。
 
 | 页 | 旋钮 1 | 旋钮 2 | 旋钮 3 |
 |---|---|---|---|
-| P1 | Mix | Decay | Tone |
-| P2 | RevLen（反向时长） | Duck（灵敏度） | Gate（阈值） |
+| P1 | Mix（湿声直控） | Rev（gate/shape/density，wash -> gated reverse，有下限） | Space（revlen/decay/width，small -> huge） |
+| P2 | Tone（tone/bass/sat，dark -> bright） | Grain（diffusion/mod，grainy-static -> smooth-flowing） | Duck（duck 直控） |
+| P3 | Mode 1..5（Wash/Reverse/Gated/Shoegaze/Space） | （备用） | （备用） |
 
-扩展（后续页/隐藏）：Shape（swell 曲线）、Mod（尾音调制深度）、Sat（饱和量）、Width（立体声宽度）。
-参数表为最终目标。v1 实现顺序：先 Mix/Decay/Tone 跑通，多页 UI 验证后再加 RevLen/Duck/Gate。
-
+曲线要求：任何旋钮组合都保持可听；rev=0 是 subtle wash 而不是关闭；
+mod（tap 读头 LFO）在 bed=0 下也生效（解决"delay 感"）。
 ## 6. 开发阶段
 
 - **A. 平台打通**：装 TI C6000 编译器 → 跑通 repeat98 构建 → 最小 gain.ZDL 刷进 G1on →

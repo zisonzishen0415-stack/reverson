@@ -114,6 +114,43 @@ int main(void) {
     rev_swell_set(&s, 2.0f, -1.0f);
     CHECK(s.scale == 2.0f && s.amount == 0.0f);
 
+    /* Mod knob: the tap LFO must change the impulse response (living tail).
+       mod=0 is static, mod=1 max movement; per-tap phase offsets decorrelate
+       the taps so the response differs sample-by-sample, and the LFO start
+       is deterministic (mod=0 twice is identical). */
+    {
+        enum { M = 22000 };
+        float a[M], b[M], c[M];
+        const float mods[3] = {0.0f, 1.0f, 0.0f};
+        float* dst[3] = {a, b, c};
+        for (int pass = 0; pass < 3; ++pass) {
+            float* o = dst[pass];
+            rev_swell_clear(&s);
+            rev_swell_set(&s, 1.0f, 1.0f);
+            rev_swell_set_mod(&s, mods[pass]);
+            rev_swell_process(&s, 1.0f, &l, &r);
+            o[0] = l + r;
+            for (int i = 1; i < M; ++i) {
+                rev_swell_process(&s, 0.0f, &l, &r);
+                o[i] = l + r;
+                CHECK(is_finite_f(l) && is_finite_f(r));
+            }
+        }
+        float d01 = 0.0f, d02 = 0.0f;
+        for (int i = 0; i < M; ++i) {
+            d01 += rev_absf(a[i] - b[i]);   /* mod 0 vs mod 1 */
+            d02 += rev_absf(a[i] - c[i]);   /* mod 0 twice: deterministic */
+        }
+        CHECK(d01 > 1e-3f);
+        CHECK(d02 == 0.0f);
+        float mp = 0.0f;
+        for (int i = 0; i < M; ++i) {
+            if (rev_absf(a[i]) > mp) mp = rev_absf(a[i]);
+            if (rev_absf(b[i]) > mp) mp = rev_absf(b[i]);
+        }
+        CHECK(mp < 1.0f);   /* modulation stays bounded */
+    }
+
     if (fails == 0) { printf("test_swell PASS\n"); return 0; }
     printf("test_swell FAILED (%d)\n", fails);
     return 1;

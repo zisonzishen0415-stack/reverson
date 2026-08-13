@@ -38,15 +38,15 @@ typedef struct {
 } Preset;
 
 static const Preset PRESETS[] = {
-    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.00f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f, 0.30f },
-    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f, 0.30f },
-    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.00f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f, 0.30f },
-    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.00f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f, 0.30f },
-    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.00f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f, 0.30f },
-    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f, 0.30f },
-    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.00f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f, 0.30f },
-    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.00f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f, 0.30f },
-    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.00f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
+    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.40f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f, 0.30f },
+    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.30f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f, 0.30f },
+    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.45f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f, 0.30f },
+    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.25f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f, 0.30f },
+    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.35f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f, 0.30f },
+    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.60f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f, 0.30f },
+    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.50f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f, 0.30f },
+    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.45f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f, 0.30f },
+    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.50f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
     { "tight",   0.70f, 0.75f, 0.45f, 0.15f, 0.15f, 0.75f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
     { "gated",   0.65f, 0.80f, 0.45f, 0.20f, 0.10f, 0.90f, 0.50f, 0.35f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
     { "rev",     0.80f, 0.85f, 0.40f, 0.40f, 0.30f, 0.45f, 0.50f, 0.60f, 0.20f, 0.90f, 0.85f, 0.65f, 0.30f },
@@ -56,7 +56,7 @@ static const Preset PRESETS[] = {
 /* Mode 1..5 sub-presets: a single knob switches whole character sets.
    mix decay tone revlen duck gate shape mod sat width density bass diffusion */
 static const Preset MODES[5] = {
-    { "Wash",    0.60f, 0.85f, 0.45f, 0.45f, 0.35f, 0.00f, 0.50f, 0.30f, 0.15f, 0.90f, 0.95f, 0.55f, 0.35f },
+    { "Wash",    0.60f, 0.85f, 0.45f, 0.45f, 0.35f, 0.25f, 0.50f, 0.30f, 0.15f, 0.90f, 0.95f, 0.55f, 0.35f },
     { "Reverse", 0.80f, 0.75f, 0.40f, 0.40f, 0.30f, 0.65f, 0.70f, 0.30f, 0.15f, 0.90f, 0.80f, 0.55f, 0.15f },
     { "Gated",   0.70f, 0.70f, 0.45f, 0.25f, 0.20f, 0.90f, 0.50f, 0.30f, 0.15f, 0.85f, 0.35f, 0.55f, 0.20f },
     { "Shoegaze",0.80f, 0.85f, 0.40f, 0.45f, 0.45f, 0.45f, 0.60f, 0.30f, 0.15f, 0.90f, 0.85f, 0.55f, 0.30f },
@@ -193,14 +193,18 @@ int main(int argc, char** argv) {
     float dry_peak = peak_of(dryL, total);
     float norm = 0.89f / dry_peak;
 
+    /* dry and wet files share the same output scale (both x norm) so A/B
+       listening is honest; loud presets are gently pulled back to 0.95 peak
+       so they never clip the 16-bit render (the printed peak is post-scale). */
     char path[1024];
+    for (unsigned i = 0; i < total; ++i) dryL[i] *= norm;
     snprintf(path, sizeof(path), "%s_dry.wav", argv[2]);
     write_wav(path, dryL, dryL, total, a.rate);
     {
         float drms = 0.0f;
         for (unsigned i = 0; i < total; ++i) drms += dryL[i] * dryL[i];
         drms = (float)sqrt(drms / (float)total);
-        printf("dry: peak=%.3f rms=%.3f -> %s\n", dry_peak * norm, drms, path);
+        printf("dry: peak=%.3f rms=%.3f -> %s\n", peak_of(dryL, total), drms, path);
     }
 
     for (unsigned pi = 0; pi < NUM_PRESETS; ++pi) {
@@ -232,7 +236,7 @@ int main(int argc, char** argv) {
                 if (r6 < 0.0f) r6 = 0.5f;
                 if (s6 < 0.0f) s6 = 0.6f;
                 if (t6 < 0.0f) t6 = 0.5f;
-                if (g6 < 0.0f) g6 = 0.5f;
+                if (g6 < 0.0f) g6 = 0.6f;
                 if (d6 < 0.0f) d6 = 0.4f;
                 ReversonParams mp;
                 Reverson_map6(m6, r6, s6, t6, g6, d6, &mp);
@@ -303,6 +307,15 @@ int main(int argc, char** argv) {
                 L[out] = l; R[out] = r; ++out;
             }
         for (unsigned i = 0; i < out; ++i) { L[i] *= norm; R[i] *= norm; }
+        {
+            float pk = peak_of(L, out);
+            float pk2 = peak_of(R, out);
+            if (pk2 > pk) pk = pk2;
+            if (pk > 0.95f) {
+                float g = 0.95f / pk;
+                for (unsigned i = 0; i < out; ++i) { L[i] *= g; R[i] *= g; }
+            }
+        }
         snprintf(path, sizeof(path), "%s_%s.wav", argv[2], pr->name);
         write_wav(path, L, R, out, a.rate);
         float rms = 0.0f;

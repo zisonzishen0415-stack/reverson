@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 option(REVERSON_BUILD_VST "Build the VST3 shell" OFF)
 option(REVERSON_BUILD_TOOLS "Build offline demo renderer" ON)
+option(REVERSON_ENABLE_FDN "Include the 8-line FDN bed (off for the ZDL port to save ctx[3] memory)" ON)
 
 include(CTest)
 
@@ -39,6 +40,9 @@ target_sources(reverson_core PRIVATE core/rev_rev.c)
 target_sources(reverson_core PRIVATE core/rev_fdn.c)
 target_sources(reverson_core PRIVATE core/rev_swell.c)
 target_sources(reverson_core PRIVATE core/reverson.c)
+if(NOT REVERSON_ENABLE_FDN)
+    target_compile_definitions(reverson_core PRIVATE REVERSON_ENABLE_FDN=0)
+endif()
 target_include_directories(reverson_core PUBLIC core)
 reverson_enable_warnings(reverson_core)
 
@@ -53,4 +57,12 @@ if(BUILD_TESTING)
     reverson_add_test(test_fdn)
     reverson_add_test(test_swell)
     reverson_add_test(test_core)
+    # the ZDL shape: same core sources compiled with REVERSON_ENABLE_FDN=0
+    # (the bed must compile out, shrink the state block, and stay inert).
+    add_executable(test_nofdn tests/test_nofdn.c core/reverson.c core/rev_env.c
+                   core/rev_fdn.c core/rev_swell.c core/rev_delay.c core/rev_rev.c)
+    target_include_directories(test_nofdn PRIVATE core)
+    target_compile_definitions(test_nofdn PRIVATE REVERSON_ENABLE_FDN=0)
+    reverson_enable_warnings(test_nofdn)
+    add_test(NAME test_nofdn COMMAND test_nofdn)
 endif()

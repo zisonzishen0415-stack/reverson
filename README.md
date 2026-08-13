@@ -4,10 +4,10 @@ A from-scratch reverse reverb for shoegaze / indie (DIIV, MBV-style) tones,
 built first as a **VST3** to tune in a DAW, then ported to the **Zoom
 G1on / MS-series pedal** as a custom ZDL effect. The DSP is fully original - no extracted factory algorithms.
 
-The signature sound: a **dense, continuous reverb bed** with an SPX90-style
-**multi-head reverse swell** on top - each note is answered immediately
-(zero predelay), builds an accelerating crescendo, then the line runs dry
-into a natural gate.
+The signature sound: a **dense, always-present reverse swell** (SPX90-style
+multi-head, no continuous FDN bed by default) - each note is answered
+immediately (zero predelay), builds an accelerating crescendo, then the line
+runs dry into a natural gate.
 
 ## Features
 
@@ -15,33 +15,37 @@ into a natural gate.
   so it works as a live pedal effect.
 - **SPX90-style multi-head swell** - 13 delay taps with exponentially
   increasing delays (8 ms..224 ms) and gains, diffused by cascaded allpass
-  filters, layered over an 8-line FDN reverb bed.
+  filters plus a per-tap LFO; an 8-line FDN bed is optional (default off).
 - **Accelerating reverse attack** (DP/4-style) - the `Shape` knob blends a
   linear attack into a quadratic "slow start, rush to peak" curve.
+- **Living tail (Mod)** - a slow triangle LFO dithers each tap's read position
+  with per-tap phase offsets, so the echo comb slowly decorrelates: reads as
+  reverb instead of delay, with far taps breathing more than near taps.
 - **Level-independent onset triggering** - triggers the same way whether you
   pick quietly or loudly.
-- **Zero predelay, no amplitude pumping** - a floor keeps the bed always
+- **Zero predelay, no amplitude pumping** - a floor keeps the wet always
   present; the swell comes from the tap structure, not from gating the whole
   wet signal.
 - **ZDL-safe core** - no heap, no `double`, no division, no `sinf` in the
   audio path; all memory is caller-provided.
 
-## Parameters (12, all exposed in the VST)
+## Parameters (13 internal; the UI exposes 6 linked knobs)
 
 | Param | Range | What it does |
 |---|---|---|
-| Mix | 0..1 | dry/wet balance |
-| Decay | 0..1 | optional FDN bed tail (fixed while the bed is off) |
-| Tone | 0..1 | wet low-pass (dark..bright) |
-| RevLen | 0..1 | reverse swell length |
-| Duck | 0..1 | wet rides down while you play |
-| Gate | 0..1 | reverse amount: 0 = dense bed, 1 = full reverse gate |
-| Shape | 0..1 | attack curve: 0 = linear, 1 = accelerating |
-| Mod | 0..1 | FDN read-delay LFO (living tail) |
-| Sat | 0..1 | soft-clip saturation |
-| Width | 0..1 | stereo width |
-| Density | 0..1 | swell hold time after the peak |
-| Bass | 0..1 | low-mid body shelf |
+| Mix | 0..1 | dry/wet balance (knob: Mix) |
+| Gate | 0..1 | reverse amount: 0 = dry / bed-only, 1 = full reverse gate (knob: Rev) |
+| Shape | 0..1 | attack curve: 0 = linear, 1 = accelerating (knob: Rev) |
+| Density | 0..1 | swell hold time after the peak (knob: Rev) |
+| RevLen | 0..1 | reverse swell length (knob: Space) |
+| Decay | 0..1 | FDN bed tail, used when the bed is on (knob: Space) |
+| Width | 0..1 | stereo width (knob: Space) |
+| Tone | 0..1 | wet low-pass, dark..bright (knob: Tone) |
+| Bass | 0..1 | low-mid body shelf (knob: Tone) |
+| Sat | 0..1 | soft-clip saturation (knob: Tone) |
+| Diffusion | 0..1 | diffuser feedback: sharp echo -> dense smear (knob: Grain) |
+| Mod | 0..1 | swell-tap LFO, living tail (knob: Grain) |
+| Duck | 0..1 | wet rides down while you play (knob: Duck) |
 
 ## 6-knob ergonomic mapping (two pages x 3)
 
@@ -52,18 +56,22 @@ owned by exactly one knob so they never fight:
 |---|---|---|
 | P1 | Mix | dry/wet (direct) |
 | P1 | Rev | gate / shape / density (wash -> gated reverse) |
-| P1 | Space | revlen / mod / width (small -> huge) |
+| P1 | Space | revlen / decay / width (small -> huge) |
 | P2 | Tone | tone / bass / sat (dark -> bright) |
-| P2 | Grain | diffusion (grainy -> smooth) |
+| P2 | Grain | diffusion / mod (grainy-static -> smooth-flowing) |
 | P2 | Duck | duck (direct) |
 
-Curves are shaped so any combination stays musical (gate eases, decay is
-fixed with the bed off, tone adds saturation as it brightens).
+Curves are shaped so any combination stays musical: `Rev` keeps a floor
+(rev=0 is a subtle wash, never a dead dry patch), `Space` grows the swell
+span + bed tail + width together, `Tone` adds saturation as it brightens,
+and `Grain` pairs the diffuser with the tap LFO - the "delay vs reverb"
+axis lives entirely on that knob.
 
 ## DSP architecture
 
 ```
 in -> duck -> multi-head swell (13 taps, exp delays/gains)
+              -> per-tap LFO (Mod: living tail, decorrelates the comb)
               -> 3-stage aperiodic feedback diffusion (fills the gaps)
          -> reverse gate envelope (accelerating attack, floor -> 1 -> cut)
          -> tone LP -> bass shelf -> sat -> width -> mix
@@ -101,7 +109,7 @@ default); the system-wide `C:\Program Files\Common Files\VST3` needs admin.
 
 The editor is a faithful replica of the Zoom MS-series LCD UI: effect name +
 page, focused parameter with a big value and bar, K1/K2/K3 slots, and three
-pedal-style knobs below (PAGE cycles the 4 pages of 3 parameters).
+pedal-style knobs below (PAGE cycles the 2 pages of 3 parameters).
 
 ### Offline render tool (A/B sweeps without a DAW)
 
@@ -116,9 +124,9 @@ VST, with optional per-param overrides for quick sweeps.
 
 ## Tests
 
-`ctest` runs 7 suites covering the delay lines, FDN, reverse swell engine,
-onset envelope, and the full core (boundedness, no NaN, stereo decorrelation,
-duck/gate behavior).
+`ctest` runs 8 suites covering the delay lines, FDN, reverse swell engine,
+onset envelope, the full core (boundedness, no NaN, stereo decorrelation,
+duck/gate behavior, map6 invariants, 48 kHz), and the no-FDN ZDL-shaped build.
 
 ## Zoom G1on / ZDL status
 
@@ -126,8 +134,13 @@ duck/gate behavior).
   9-knob hardware probe that validates the synthesized LineSel-cloned edit
   handlers for knobs 4..9 (pages 2/3) on the pedal - the last open piece
   before a full 9-knob Reverson ZDL.
-- The pedal exposes up to **9 user knobs** (3 pages x 3), so the ZDL port
-  maps the 9 core params to knobs; the rest ship as VST-tuned defaults.
+- The pedal exposes up to **9 user knobs** (3 pages x 3): pages 1-2 carry the
+  6-knob mapping above; page 3 is reserved for a 5-position mode switch
+  (Wash / Reverse / Gated / Shoegaze / Space - the `MODES` tables in
+  `tools/render_demo.c`) plus 2 spare knobs.
+- The ZDL build compiles the core with `REVERSON_ENABLE_FDN=0`: the FDN bed
+  is compiled out entirely and ~240 KB of `ctx[3]` memory is not reserved
+  (the pure-reverse path is the shipped sound anyway).
 - See `research_docs/` and `ZoomMultistompZDL/docs/` for the reverse
   engineering notes (edit-handler ABI, safe DSP rules, ZDL status).
 

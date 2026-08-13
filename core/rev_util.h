@@ -14,6 +14,18 @@ static inline float rev_absf(float x) { return x < 0.0f ? -x : x; }
 static inline float rev_coeff_from_tc(float tc_samples) {
     return 1.0f / (tc_samples + 1.0f);
 }
+/* One-pole parameter smoothing with a convergence SNAP. Pure one-pole
+   smoothing stalls in float near the target (the increment drops below the
+   ULP): mix would sit at 0.9999934 instead of 1.0 (a residual dry leak at
+   wet=100%), and gate would sit at a denormal instead of 0. Once within
+   1e-4 the value lands exactly on the target; the snap step is far below
+   audibility and only happens when the knob has (nearly) stopped moving. */
+static inline float rev_smooth(float cur, float target, float c) {
+    cur += (target - cur) * c;
+    float d = target - cur;
+    if (d > 1e-4f || d < -1e-4f) return cur;
+    return target;
+}
 static inline uint32_t rev_next_pow2(uint32_t v) {
     if (v == 0u) return 1u;
     v--;

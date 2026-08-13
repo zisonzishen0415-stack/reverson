@@ -55,7 +55,15 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     Reverson_set_6knob(core, *pMix, *pRev, *pSpace, *pTone, *pGrain, *pDuck);
 
     const int numSamples = buffer.getNumSamples();
-    const float* in = buffer.getReadPointer(0);
+    /* The core is mono-in (like the pedal). On a stereo bus, sum L+R to mono
+       instead of silently discarding the right channel (which used to replace
+       the right output with a copy of the left-processed signal). */
+    if ((int)monoIn.size() < numSamples) monoIn.resize(numSamples);
+    const float* inL = buffer.getReadPointer(0);
+    const float* inR = buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr;
+    for (int i = 0; i < numSamples; ++i)
+        monoIn[i] = (inR != nullptr) ? 0.5f * (inL[i] + inR[i]) : inL[i];
+    const float* in = monoIn.data();
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
 

@@ -9,6 +9,14 @@ extern "C" {
 #define REVERSON_NUM_PARAMS 13u
 #define REVERSON_MAX_REV_S 2.0f
 
+/* Include the 8-line FDN bed in the state block? Default on (VST / A/B).
+   The ZDL port builds with REVERSON_ENABLE_FDN=0: the bed is compiled out
+   entirely and ~240 KB of ctx[3] memory is not reserved (the pure-reverse
+   path is the shipped sound anyway). */
+#ifndef REVERSON_ENABLE_FDN
+#define REVERSON_ENABLE_FDN 1
+#endif
+
 typedef enum {
     REVERSON_PARAM_MIX = 0,
     REVERSON_PARAM_DECAY,
@@ -44,10 +52,11 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
 /* 6-knob mapping (two pages x 3). Every internal param is owned by exactly
    one knob so the knobs never fight:
      mix   -> wet (direct)
-     rev   -> gate, shape, density      (wash -> gated reverse)
-     space -> decay, revlen, mod, width (small -> huge)
+     rev   -> gate, shape, density      (wash -> gated reverse; a floor keeps
+                                         the reverse alive even at rev=0)
+     space -> revlen, decay, width      (small -> huge)
      tone  -> tone, bass, sat           (dark -> bright)
-     grain -> diffusion                 (grainy -> smooth)
+     grain -> diffusion, mod            (grainy/static -> smooth/flowing)
      duck  -> duck (direct)
    All in [0,1]; curves shaped so any combination stays musical.
    ZDL-safe (polynomials only, no div/sin/pow). */

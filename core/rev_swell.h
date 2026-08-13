@@ -21,7 +21,12 @@
    immediately by the near taps (ZERO predelay), the far louder taps build a
    crescendo, then the line runs dry -> the natural "reverse" swell/gate.
    Multiplicative gain -> no amplitude pumping, unlike a single wet-signal
-   envelope ramp. */
+   envelope ramp.
+
+   A slow triangle LFO dithers each tap's read position (per-tap phase
+   offsets, so the taps smear against each other instead of wobbling in
+   sync). That is the "Mod" knob: a living, flowy tail that also breaks up
+   the discrete echo comb -> reads as reverb, not delay. */
 typedef struct {
     RevDelay line;
     RevDelay diff[3][2];      /* [stage][channel] feedback allpass lines */
@@ -34,6 +39,10 @@ typedef struct {
     float base_gain_r[REV_SWELL_TAPS];
     float scale;             /* revlen -> tap span (0.5x..2.0x) */
     float amount;            /* 0..1 swell gain (driven by gate) */
+    float lfo_phase;         /* slow triangle LFO 0..1 */
+    float lfo_inc;
+    float lfo_off[REV_SWELL_TAPS];  /* per-tap phase offsets (decorrelate) */
+    float mod_depth;         /* tap read-depth 0..1 (scaled inside) */
     /* one-pole allpass states [channel][stage][0=prev_in,1=prev_out] */
     float ap[2][3][2];
     float ap_g[3];
@@ -45,5 +54,7 @@ void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2,
 void rev_swell_clear(RevSwell* s);
 /* revlen/amount in [0,1]: revlen scales the tap span, amount scales tap gain */
 void rev_swell_set(RevSwell* s, float revlen, float amount);
+/* mod in [0,1]: 0 = static taps, 1 = max LFO movement (the Mod knob) */
+void rev_swell_set_mod(RevSwell* s, float mod);
 void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r);
 #endif
