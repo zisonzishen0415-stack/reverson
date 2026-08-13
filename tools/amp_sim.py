@@ -7,6 +7,7 @@
 #   drive  0.0..1.0  soft-clip amount (0.4 = clean-ish, 0.8 = pushed)
 #   cab    0.0..1.0  cabinet tone amount (0 = flat, 1 = full cab voicing)
 #   neve   0.0..1.0  Neve channel coloration (0 = none, 0.6 = console sheen)
+#   pos    pre|post  neve before cab (drive-like) or after cab (console, default)
 import numpy as np, wave, sys
 from scipy import signal
 
@@ -111,15 +112,20 @@ def neve_coloration(x, sr, amount):
 
 def main():
     if len(sys.argv) < 3:
-        print('usage: python amp_sim.py <in.wav> <out.wav> [drive=0.5] [cab=0.85] [neve=0.5]')
+        print('usage: python amp_sim.py <in.wav> <out.wav> [drive=0.5] [cab=0.85] [neve=0.5] [pos=post]')
         return 1
     drive = float(sys.argv[3]) if len(sys.argv) > 3 else 0.5
     cab = float(sys.argv[4]) if len(sys.argv) > 4 else 0.85
     neve = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5
+    pos = sys.argv[6] if len(sys.argv) > 6 else 'post'
     d, sr = read_wav(sys.argv[1])
     out = soft_clip(d, drive)
-    out = cab_eq(out, sr, cab)
-    out = neve_coloration(out, sr, neve)
+    if pos == 'pre':
+        out = neve_coloration(out, sr, neve)   # amp -> neve -> cab
+        out = cab_eq(out, sr, cab)
+    else:
+        out = cab_eq(out, sr, cab)             # amp -> cab -> neve (console)
+        out = neve_coloration(out, sr, neve)
     pk = np.abs(out).max()
     if pk > 0.95:
         out *= 0.95 / pk
