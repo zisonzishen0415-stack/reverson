@@ -25,8 +25,10 @@
   https://freesound.org/s/316990/ (original page now deleted)
 - License: not verifiable (Freesound page removed); local demo use only.
 - Content: clean surf-rock electric guitar strumming, 46 s / 40 s.
-- Generated with tools/amp_sim.py (drive 0.35, cab 0.85) so the take
-  reads as a clean amp + 1x12 cab instead of a DI-ish dry signal.
+- Generated with tools/amp_sim.py (drive 0.35, cab 0.85, neve 0.6, pos pre)
+  so the take reads as a clean amp + 1x12 cab with Neve-style console
+  coloration. Neve is placed BEFORE the cab by default: the cab's high
+  rolloff tames the saturation harmonics so they never sound harsh.
 
 ## Pre-existing assets (not from this project's search)
 - PIXIES.wav, DC120.wav, loop1.wav, Loop2C.wav, candidates.png: from the
