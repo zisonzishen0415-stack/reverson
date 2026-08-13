@@ -107,10 +107,12 @@ void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r) {
         if (ph > 1.0f) ph -= 1.0f;
         float tri = 1.0f - 4.0f * rev_absf(ph - 0.5f);  /* -1..1 */
         float t = tri * 0.5f + 0.5f;                     /* 0..1 */
-        uint32_t shift = (uint32_t)(s->mod_depth * t * (float)s->base_delay[i]);
-        uint32_t d = (uint32_t)((float)s->base_delay[i] * s->scale) + shift;
-        if (d >= s->line.len) d = s->line.len - 1u;   /* guard: never alias */
-        float v = rev_delay_read(&s->line, d);
+        float shift = s->mod_depth * t * (float)s->base_delay[i];
+        float d = (float)s->base_delay[i] * s->scale + shift;
+        if (d >= (float)(s->line.len - 1u)) d = (float)(s->line.len - 1u);
+        if (d < 0.0f) d = 0.0f;
+        /* interpolated read: the tap positions glide (no step clicks) */
+        float v = rev_delay_read_frac(&s->line, d);
         l += v * (s->base_gain_l[i] * s->amount);
         r += v * (s->base_gain_r[i] * s->amount);
     }

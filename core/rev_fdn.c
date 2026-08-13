@@ -50,9 +50,11 @@ void rev_fdn_process(RevFdn* f, float in, float* out_l, float* out_r) {
     float l = 0.0f, r = 0.0f;
     for (int i = 0; i < REV_FDN_LINES; ++i) {
         rev_delay_write(&f->line[i], in + fb[i]);
-        int shift = (int)(f->mod_depth * tri);
-        uint32_t delay = (uint32_t)((int)f->base_delay[i] + shift);
-        float v = rev_delay_read(&f->line[i], delay);
+        /* interpolated fractional read: the LFO slides the read position
+           smoothly instead of stepping whole samples (no zipper clicks) */
+        float delay = (float)f->base_delay[i] + f->mod_depth * tri;
+        if (delay < 0.0f) delay = 0.0f;
+        float v = rev_delay_read_frac(&f->line[i], delay);
         f->state[i] += (v - f->state[i]) * f->damp_coef;
         if ((i & 1u) == 0u) l += f->state[i]; else r += f->state[i];
     }

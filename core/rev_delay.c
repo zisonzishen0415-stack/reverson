@@ -22,3 +22,13 @@ float rev_delay_read(const RevDelay* d, uint32_t delay_samples) {
     uint32_t i = d->idx - 1u - delay_samples;
     return d->buf[i & d->mask];
 }
+
+float rev_delay_read_frac(const RevDelay* d, float delay_samples) {
+    if (delay_samples < 0.0f) delay_samples = 0.0f;
+    uint32_t i0 = (uint32_t)delay_samples;
+    float frac = delay_samples - (float)i0;
+    uint32_t i1 = i0 + 1u;
+    float v0 = d->buf[(d->idx - 1u - i0) & d->mask];
+    float v1 = d->buf[(d->idx - 1u - i1) & d->mask];
+    return v0 + (v1 - v0) * frac;
+}

@@ -21,4 +21,9 @@ void rev_delay_write(RevDelay* d, float v);
    guarantee history by clearing or pre-filling the buffer, the function
    does not auto-zero-pad. */
 float rev_delay_read(const RevDelay* d, uint32_t delay_samples);
+/* Fractional read with linear interpolation (ZDL-safe: mul/add only).
+   Callers modulate delay positions with an LFO; stepping whole samples
+   would inject a click every time the read position jumps, so the
+   modulated reads (FDN bed, swell taps) go through this. */
+float rev_delay_read_frac(const RevDelay* d, float delay_samples);
 #endif
