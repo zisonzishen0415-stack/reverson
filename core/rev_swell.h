@@ -56,5 +56,11 @@ void rev_swell_clear(RevSwell* s);
 void rev_swell_set(RevSwell* s, float revlen, float amount);
 /* mod in [0,1]: 0 = static taps, 1 = max LFO movement (the Mod knob) */
 void rev_swell_set_mod(RevSwell* s, float mod);
+/* Split API: taps (writes the line, sums the heads) and diffuse (allpass
+   chain + L/R crossfeed) are separate so callers can blend another source
+   (the reverse layer) into the diffuser input. rev_swell_process remains as
+   the composed single call. */
+void rev_swell_taps(RevSwell* s, float in, float* out_l, float* out_r);
+void rev_swell_diffuse(RevSwell* s, float l, float r, float* out_l, float* out_r);
 void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r);
 #endif

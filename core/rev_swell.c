@@ -99,38 +99,64 @@ void rev_swell_set_mod(RevSwell* s, float mod) {
     s->mod_depth = 0.025f * mod;
 }
 
-void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r) {
+void rev_swell_taps(RevSwell* s, float in, float* out_l, float* out_r) {
     rev_delay_write(&s->line, in);
     float l = 0.0f, r = 0.0f;
-    for (int i = 0; i < REV_SWELL_TAPS; ++i) {
-        float ph = s->lfo_phase + s->lfo_off[i];
-        if (ph > 1.0f) ph -= 1.0f;
-        float tri = 1.0f - 4.0f * rev_absf(ph - 0.5f);  /* -1..1 */
-        float t = tri * 0.5f + 0.5f;                     /* 0..1 */
-        float shift = s->mod_depth * t * (float)s->base_delay[i];
-        float d = (float)s->base_delay[i] * s->scale + shift;
-        if (d >= (float)(s->line.len - 1u)) d = (float)(s->line.len - 1u);
-        if (d < 0.0f) d = 0.0f;
-        /* interpolated read: the tap positions glide (no step clicks) */
-        float v = rev_delay_read_frac(&s->line, d);
-        l += v * (s->base_gain_l[i] * s->amount);
-        r += v * (s->base_gain_r[i] * s->amount);
+    if (s->amount >= 1e-3f) {
+        if (s->mod_depth < 1e-3f) {
+            /* static taps: no per-tap LFO math (CPU fast path) */
+            for (int i = 0; i < REV_SWELL_TAPS; ++i) {
+                float d = (float)s->base_delay[i] * s->scale;
+                if (d >= (float)(s->line.len - 1u)) d = (float)(s->line.len - 1u);
+                float v = rev_delay_read_frac(&s->line, d);
+                l += v * (s->base_gain_l[i] * s->amount);
+                r += v * (s->base_gain_r[i] * s->amount);
+            }
+        } else {
+            for (int i = 0; i < REV_SWELL_TAPS; ++i) {
+                float ph = s->lfo_phase + s->lfo_off[i];
+                if (ph > 1.0f) ph -= 1.0f;
+                float tri = 1.0f - 4.0f * rev_absf(ph - 0.5f);  /* -1..1 */
+                float t = tri * 0.5f + 0.5f;                     /* 0..1 */
+                float shift = s->mod_depth * t * (float)s->base_delay[i];
+                float d = (float)s->base_delay[i] * s->scale + shift;
+                if (d >= (float)(s->line.len - 1u)) d = (float)(s->line.len - 1u);
+                if (d < 0.0f) d = 0.0f;
+                /* interpolated read: the tap positions glide (no step clicks) */
+                float v = rev_delay_read_frac(&s->line, d);
+                l += v * (s->base_gain_l[i] * s->amount);
+                r += v * (s->base_gain_r[i] * s->amount);
+            }
+            s->lfo_phase += s->lfo_inc;
+            if (s->lfo_phase > 1.0f) s->lfo_phase -= 1.0f;
+        }
     }
-    s->lfo_phase += s->lfo_inc;
-    if (s->lfo_phase > 1.0f) s->lfo_phase -= 1.0f;
-    /* Feedback diffusion (Freeverb-style allpass): fills the gaps between
-       taps so the swell reads as reverb, not a discrete echo line. Each tap
-       becomes a decaying echo train; y = -x + buf[n-D], buf[n] = x + fb*buf[n-D]. */
+    *out_l = l;
+    *out_r = r;
+}
+
+void rev_swell_diffuse(RevSwell* s, float l, float r, float* out_l, float* out_r) {
+    /* Feedback diffusion (Freeverb-style allpass) with per-stage L/R
+       crossfeed: the channels smear against each other -> wider, denser tail.
+       y = -x + buf[n-D], buf[n] = x + fb*buf[n-D], then l += cf*r / r += cf*l. */
+    for (int st = 0; st < 3; ++st) {
+        for (int ch = 0; ch < 2; ++ch) {
+            RevDelay* d = &s->diff[st][ch];
+            float x = (ch == 0) ? l : r;
+            float bufout = rev_delay_read(d, s->diff_d[st]);
+            float y = -x + bufout;
+            rev_delay_write(d, x + s->diff_fb[st] * bufout);
+            if (ch == 0) l = y; else r = y;
+        }
+        float cf = 0.35f * s->diff_fb[st];
+        float l2 = l + cf * r;
+        float r2 = r + cf * l;
+        l = l2;
+        r = r2;
+    }
+    /* cascaded one-pole allpass smears (unit magnitude, no boost) */
     for (int ch = 0; ch < 2; ++ch) {
         float x = (ch == 0) ? l : r;
-        for (int st = 0; st < 3; ++st) {
-            RevDelay* d = &s->diff[st][ch];
-            float bufout = rev_delay_read(d, s->diff_d[st]);   /* buf[n-D] */
-            float y = -x + bufout;
-            rev_delay_write(d, x + s->diff_fb[st] * bufout);   /* buf[n] */
-            x = y;
-        }
-        /* cascaded one-pole allpass smears (unit magnitude, no boost) */
         for (int st = 0; st < 3; ++st) {
             float g = s->ap_g[st];
             float y = -g * x + s->ap[ch][st][0] + g * s->ap[ch][st][1];
@@ -142,4 +168,10 @@ void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r) {
     }
     *out_l = l * s->out_gain;
     *out_r = r * s->out_gain;
+}
+
+void rev_swell_process(RevSwell* s, float in, float* out_l, float* out_r) {
+    float l, r;
+    rev_swell_taps(s, in, &l, &r);
+    rev_swell_diffuse(s, l, r, out_l, out_r);
 }

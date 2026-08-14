@@ -151,6 +151,58 @@ int main(void) {
         CHECK(mp < 1.0f);   /* modulation stays bounded */
     }
 
+    /* split API: taps + diffuse composition equals the single-call process
+       on twin instances (bit-exact: deterministic engines, same inputs) */
+    {
+        float mem2[REV_SWELL_BUF_LEN];
+        float diff_mem2[3u * 2u * REV_SWELL_DIFF_LEN];
+        RevSwell a, b;
+        rev_swell_init(&a, mem, REV_SWELL_BUF_LEN, diff_mem, REV_SWELL_DIFF_LEN, 44100.0f);
+        rev_swell_init(&b, mem2, REV_SWELL_BUF_LEN, diff_mem2, REV_SWELL_DIFF_LEN, 44100.0f);
+        rev_swell_set(&a, 0.7f, 0.8f);
+        rev_swell_set(&b, 0.7f, 0.8f);
+        rev_swell_set_mod(&a, 0.6f);
+        rev_swell_set_mod(&b, 0.6f);
+        float exact_diff = 0.0f;
+        for (int i = 0; i < 5000; ++i) {
+            float x = (i % 100 == 0) ? 0.5f : 0.0f;
+            float al, ar, bl, br;
+            rev_swell_taps(&a, x, &al, &ar);
+            rev_swell_diffuse(&a, al, ar, &al, &ar);
+            rev_swell_process(&b, x, &bl, &br);
+            exact_diff += rev_absf(al - bl) + rev_absf(ar - br);
+            CHECK(is_finite_f(al) && is_finite_f(ar));
+        }
+        CHECK(exact_diff == 0.0f);
+    }
+
+    /* mod=0 fast path: the LFO phase must not advance, so a mod=0 run after
+       an intervening mod=1 run is bit-identical to a fresh mod=0 run */
+    {
+        enum { M2 = 8000 };
+        float a[M2], b[M2];
+        for (int pass = 0; pass < 2; ++pass) {
+            float* o = (pass == 0) ? a : b;
+            rev_swell_clear(&s);
+            rev_swell_set(&s, 1.0f, 1.0f);
+            rev_swell_set_mod(&s, 0.0f);
+            rev_swell_process(&s, 1.0f, &l, &r);
+            o[0] = l + r;
+            for (int i = 1; i < M2; ++i) {
+                rev_swell_process(&s, 0.0f, &l, &r);
+                o[i] = l + r;
+            }
+            if (pass == 0) {   /* exercise mod=1 in between; phase must not leak */
+                rev_swell_clear(&s);
+                rev_swell_set_mod(&s, 1.0f);
+                for (int i = 0; i < 100; ++i) rev_swell_process(&s, 0.0f, &l, &r);
+            }
+        }
+        float md = 0.0f;
+        for (int i = 0; i < M2; ++i) md += rev_absf(a[i] - b[i]);
+        CHECK(md == 0.0f);
+    }
+
     if (fails == 0) { printf("test_swell PASS\n"); return 0; }
     printf("test_swell FAILED (%d)\n", fails);
     return 1;
