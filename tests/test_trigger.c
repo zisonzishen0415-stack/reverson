@@ -138,6 +138,76 @@ int main(void) {
         free(mem);
     }
 
+    /* --- predelay: env must stay at the floor for exactly pd samples ------ */
+    {
+        void* mem;
+        Reverson* r = new_core(&mem);
+        CHECK(r != NULL);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.2f);
+        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.5f);
+        Reverson_set_param(r, REVERSON_PARAM_PREDELAY, 0.25f);  /* 0.120*0.25*44100 = 1323 samples */
+        float l, rr;
+        for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        float floor_before = Reverson_test_env(r);
+        play_onset(r, &l, &rr, 50);              /* the onset burst */
+        int stayed = 1;
+        for (int i = 0; i < 1200; ++i) {         /* 1200+46(burst tail) < 1323: still inside predelay */
+            Reverson_process(r, 0.0f, &l, &rr);
+            if (Reverson_test_env(r) != floor_before) stayed = 0;
+        }
+        CHECK(stayed == 1);                     /* env held at floor during predelay */
+        for (int i = 0; i < 200; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        CHECK(Reverson_test_env(r) > floor_before);   /* then it rises */
+        free(mem);
+    }
+
+    /* --- sensitivity: hard trigger ignores a quiet re-note, easy triggers -- */
+    {
+        void* mem;
+        Reverson* r = new_core(&mem);
+        CHECK(r != NULL);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.2f);
+        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.3f);
+        float l, rr;
+        Reverson_set_param(r, REVERSON_PARAM_TRIG, 1.0f);   /* rel 0.50: hard */
+        for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        play_onset(r, &l, &rr, 50);                         /* big note: fires */
+        for (int i = 0; i < 22050; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        float hard_floor = Reverson_test_env(r);
+        for (int i = 0; i < 132300; ++i) Reverson_process(r, 0.0f, &l, &rr);  /* 3 s: full cycle settles to floor */
+        for (int i = 0; i < 200; ++i) Reverson_process(r, 0.08f, &l, &rr);   /* quiet: 8% of peak */
+        for (int i = 0; i < 5000; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        CHECK(Reverson_test_env(r) <= hard_floor + 0.05f);  /* never re-fired */
+        free(mem);
+    }
+    {
+        void* mem;
+        Reverson* r = new_core(&mem);
+        CHECK(r != NULL);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.2f);
+        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.3f);
+        Reverson_set_param(r, REVERSON_PARAM_TRIG, 0.0f);   /* rel 0.12: easy */
+        float l, rr;
+        for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        play_onset(r, &l, &rr, 50);
+        for (int i = 0; i < 22050; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        for (int i = 0; i < 132300; ++i) Reverson_process(r, 0.0f, &l, &rr);  /* 3 s: settle to floor */
+        float before_quiet = Reverson_test_env(r);
+        for (int i = 0; i < 200; ++i) Reverson_process(r, 0.2f, &l, &rr);    /* 20% note */
+        for (int i = 0; i < 5000; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        CHECK(Reverson_test_env(r) > before_quiet + 0.1f); /* re-fired: env bloomed */
+        free(mem);
+    }
+
     if (fails == 0) { printf("test_trigger PASS\n"); return 0; }
     printf("test_trigger FAILED (%d)\n", fails);
     return 1;

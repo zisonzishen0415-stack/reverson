@@ -41,9 +41,13 @@ struct Reverson {
     float rev_over;             /* overshoot amount (shape-owned) */
     uint32_t rev_hold_left;     /* hold countdown */
     float hold_add;             /* trig knob -> extra hold samples (Task 7 wires it) */
+    float pd_samples;           /* predelay length in samples (from the knob) */
+    uint32_t pd_counter;        /* pending predelay countdown (0 = none) */
     uint32_t rev_last_trigger;
     uint32_t sample_count;
 };
+
+static void rev_update_derived(Reverson* r);
 
 uint32_t Reverson_state_size(float sample_rate) {
     (void)sample_rate;   /* fixed-size state (ZDL-style caller memory) */
@@ -114,9 +118,12 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->rev_over = 0.0f;
     r->rev_hold_left = 0u;
     r->hold_add = 0.0f;
+    r->pd_samples = 0.0f;
+    r->pd_counter = 0u;
     r->rev_last_trigger = 0u;
     r->sample_count = 0u;
     Reverson_reset(r);
+    rev_update_derived(r);
     return r;
 }
 
@@ -140,10 +147,12 @@ void Reverson_reset(Reverson* r) {
     r->rev_over = 0.0f;
     r->rev_hold_left = 0u;
     r->hold_add = 0.0f;
+    r->pd_counter = 0u;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
     r->wet_bl_r = 0.0f;
+    rev_update_derived(r);
 }
 
 void Reverson_set_bed(Reverson* r, float bed) {
@@ -339,6 +348,13 @@ static float rev_floor_of(const Reverson* r) {
     return f;
 }
 
+static void rev_update_derived(Reverson* r) {
+    /* trigger settings from the trig/predelay knobs (extended in Task 8) */
+    rev_env_set_thresh(&r->env, 0.12f + 0.38f * r->cur.trig);
+    r->hold_add = (0.05f + 0.75f * r->cur.trig) * r->sample_rate;
+    r->pd_samples = 0.120f * r->cur.predelay * r->sample_rate;
+}
+
 static void rev_fire_trigger(Reverson* r) {
     float sr = r->sample_rate;
     uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * sr);
@@ -390,6 +406,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     if (r->smooth_timer == 8u) {
         r->smooth_timer = 0u;
         rev_smooth_params(r);
+        rev_update_derived(r);
     }
     float c = r->smooth_coef;
     rev_env_process(&r->env, in);
@@ -402,8 +419,14 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
         if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
             uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
             if (r->sample_count - r->rev_last_trigger >= min_gap) {
-                rev_fire_trigger(r);   /* predelay wiring lands in Task 7 */
+                uint32_t pd = (uint32_t)r->pd_samples;
+                if (pd > 0u) r->pd_counter = pd;
+                else rev_fire_trigger(r);
             }
+        }
+        if (r->pd_counter > 0u) {
+            r->pd_counter--;
+            if (r->pd_counter == 0u) rev_fire_trigger(r);
         }
         if (r->cur.gate > 0.01f) {
             float target = 1.0f + r->rev_over;
