@@ -12,9 +12,10 @@
  * usage: reverson_render <in.wav> <out_prefix> [loops] [preset] [cold] [input_peak] [key=value ...]
  *   key=value - override any preset param after it is applied, e.g. gate=0.6
  *               revlen=0.5 shape=0.8. Keys: mix decay tone revlen duck gate
- *               shape mod sat width density bass
+ *               shape mod sat width density bass diffusion trig predelay
  *   loops  - number of loop passes (default 2)
- *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady, short, tight, gated, rev (default: all)
+ *   preset - one of: wet, big, only, wash, wash_wet, rev_fat, dense, steady,
+ *            short, tight, gated, rev, mbv, diiv, slowdive (default: all)
  *
  * Build: linked against reverson_core (see tools/CMakeLists.txt).
  */
@@ -34,35 +35,40 @@ typedef struct {
 
 typedef struct {
     const char* name;
-    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass, diffusion;
+    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass, diffusion, trig, predelay;
 } Preset;
 
 static const Preset PRESETS[] = {
-    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.40f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f, 0.30f },
-    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.30f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f, 0.30f },
-    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.45f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f, 0.30f },
-    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.25f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f, 0.30f },
-    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.35f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f, 0.30f },
-    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.60f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f, 0.30f },
-    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.50f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f, 0.30f },
-    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.45f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f, 0.30f },
-    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.50f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
-    { "tight",   0.70f, 0.75f, 0.45f, 0.15f, 0.15f, 0.75f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
-    { "gated",   0.65f, 0.80f, 0.45f, 0.20f, 0.10f, 0.90f, 0.50f, 0.35f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f },
-    { "rev",     0.80f, 0.85f, 0.40f, 0.40f, 0.30f, 0.45f, 0.50f, 0.60f, 0.20f, 0.90f, 0.85f, 0.65f, 0.30f },
+    { "wet",      0.55f, 0.60f, 0.60f, 0.40f, 0.50f, 0.40f, 0.33f, 0.35f, 0.10f, 0.80f, 0.75f, 0.55f, 0.30f, 0.5f, 0.0f },
+    { "big",      0.75f, 0.75f, 0.55f, 0.85f, 0.10f, 0.30f, 0.60f, 0.50f, 0.15f, 0.95f, 0.80f, 0.60f, 0.30f, 0.5f, 0.0f },
+    { "only",     1.00f, 0.80f, 0.50f, 0.80f, 0.10f, 0.45f, 0.60f, 0.50f, 0.15f, 0.90f, 0.85f, 0.60f, 0.30f, 0.5f, 0.0f },
+    { "wash",     0.60f, 0.80f, 0.40f, 0.28f, 0.75f, 0.25f, 0.66f, 0.60f, 0.08f, 0.85f, 0.90f, 0.65f, 0.30f, 0.5f, 0.0f },
+    { "wash_wet", 0.80f, 0.85f, 0.40f, 0.35f, 0.35f, 0.35f, 0.60f, 0.60f, 0.12f, 0.90f, 0.90f, 0.65f, 0.30f, 0.5f, 0.0f },
+    { "rev_fat",  0.85f, 0.92f, 0.35f, 0.50f, 0.40f, 0.60f, 0.50f, 0.75f, 0.25f, 0.90f, 0.95f, 0.75f, 0.30f, 0.5f, 0.0f },
+    { "dense",    0.85f, 0.90f, 0.35f, 0.45f, 0.40f, 0.50f, 0.50f, 0.75f, 0.25f, 0.90f, 1.00f, 0.75f, 0.30f, 0.5f, 0.0f },
+    { "steady",  0.85f, 0.88f, 0.38f, 0.45f, 0.10f, 0.45f, 0.50f, 0.60f, 0.18f, 0.90f, 1.00f, 0.70f, 0.30f, 0.5f, 0.0f },
+    { "short",   0.70f, 0.78f, 0.45f, 0.15f, 0.20f, 0.50f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f, 0.5f, 0.0f },
+    { "tight",   0.70f, 0.75f, 0.45f, 0.15f, 0.15f, 0.75f, 0.50f, 0.40f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f, 0.5f, 0.0f },
+    { "gated",   0.65f, 0.80f, 0.45f, 0.20f, 0.10f, 0.90f, 0.50f, 0.35f, 0.15f, 0.85f, 0.75f, 0.60f, 0.30f, 0.5f, 0.0f },
+    { "rev",     0.80f, 0.85f, 0.40f, 0.40f, 0.30f, 0.45f, 0.50f, 0.60f, 0.20f, 0.90f, 0.85f, 0.65f, 0.30f, 0.5f, 0.0f },
 };
 #define NUM_PRESETS ((unsigned)(sizeof(PRESETS) / sizeof(PRESETS[0])))
 
-/* Mode 1..5 sub-presets: a single knob switches whole character sets.
-   mix decay tone revlen duck gate shape mod sat width density bass diffusion */
-static const Preset MODES[5] = {
-    { "Wash",    0.60f, 0.85f, 0.45f, 0.45f, 0.35f, 0.25f, 0.50f, 0.30f, 0.15f, 0.90f, 0.95f, 0.55f, 0.35f },
-    { "Reverse", 0.80f, 0.75f, 0.40f, 0.40f, 0.30f, 0.65f, 0.70f, 0.30f, 0.15f, 0.90f, 0.80f, 0.55f, 0.15f },
-    { "Gated",   0.70f, 0.70f, 0.45f, 0.25f, 0.20f, 0.90f, 0.50f, 0.30f, 0.15f, 0.85f, 0.35f, 0.55f, 0.20f },
-    { "Shoegaze",0.80f, 0.85f, 0.40f, 0.45f, 0.45f, 0.45f, 0.60f, 0.30f, 0.15f, 0.90f, 0.85f, 0.55f, 0.30f },
-    { "Space",   0.85f, 1.00f, 0.35f, 0.60f, 0.10f, 0.20f, 0.50f, 0.35f, 0.12f, 0.95f, 1.00f, 0.60f, 0.50f },
+/* Acceptance presets (spec): expressed as 6-knob + trig/predelay values so
+   they exercise the same map6 curves the VST and pedal use. */
+typedef struct {
+    const char* name;
+    float mix, rev, space, tone, grain, duck, trig, predelay;
+} KnobPreset;
+
+static const KnobPreset KNOB_PRESETS[3] = {
+    { "mbv",      0.60f, 0.85f, 0.55f, 0.50f, 0.60f, 0.10f, 0.35f, 0.10f },
+    { "diiv",     0.55f, 0.25f, 0.60f, 0.50f, 0.40f, 0.50f, 0.55f, 0.00f },
+    { "slowdive", 0.70f, 0.35f, 0.85f, 0.45f, 0.55f, 0.30f, 0.70f, 0.00f }
 };
-#define NUM_MODES 5u
+
+/* Mode 1..5 sub-presets live in the core (Reverson_mode): a single knob
+   switches whole character sets on the pedal's page 3. */
 
 static int read_wav(const char* path, Audio* a) {
     FILE* f = fopen(path, "rb");
@@ -136,7 +142,7 @@ static int write_wav(const char* path, const float* l, const float* r, unsigned 
     return 0;
 }
 
-static void apply_preset(Reverson* r, const Preset* p) {
+static void apply_params(Reverson* r, const ReversonParams* p) {
     Reverson_set_param(r, REVERSON_PARAM_MIX, p->mix);
     Reverson_set_param(r, REVERSON_PARAM_DECAY, p->decay);
     Reverson_set_param(r, REVERSON_PARAM_TONE, p->tone);
@@ -150,6 +156,17 @@ static void apply_preset(Reverson* r, const Preset* p) {
     Reverson_set_param(r, REVERSON_PARAM_DENSITY, p->density);
     Reverson_set_param(r, REVERSON_PARAM_BASS, p->bass);
     Reverson_set_param(r, REVERSON_PARAM_DIFFUSION, p->diffusion);
+    Reverson_set_param(r, REVERSON_PARAM_TRIG, p->trig);
+    Reverson_set_param(r, REVERSON_PARAM_PREDELAY, p->predelay);
+}
+
+static void apply_preset(Reverson* r, const Preset* p) {
+    ReversonParams mp;
+    mp.mix = p->mix; mp.decay = p->decay; mp.tone = p->tone; mp.revlen = p->revlen;
+    mp.duck = p->duck; mp.gate = p->gate; mp.shape = p->shape; mp.mod = p->mod;
+    mp.sat = p->sat; mp.width = p->width; mp.density = p->density; mp.bass = p->bass;
+    mp.diffusion = p->diffusion; mp.trig = p->trig; mp.predelay = p->predelay;
+    apply_params(r, &mp);
 }
 
 static float peak_of(const float* x, unsigned n) {
@@ -266,8 +283,10 @@ int main(int argc, char** argv) {
             if (strcmp(k, "mode") == 0) {
                 int mi = (int)v;
                 if (mi < 1) mi = 1;
-                if (mi > (int)NUM_MODES) mi = (int)NUM_MODES;
-                apply_preset(core, &MODES[mi - 1]);
+                if (mi > 5) mi = 5;
+                ReversonParams mp;
+                Reverson_mode(mi, &mp);
+                apply_params(core, &mp);
                 continue;
             }
             if (strcmp(k, "mix") == 0 || strcmp(k, "rev") == 0 || strcmp(k, "space") == 0
@@ -287,6 +306,8 @@ int main(int argc, char** argv) {
             else if (strcmp(k, "density") == 0) par = REVERSON_PARAM_DENSITY;
             else if (strcmp(k, "bass") == 0)    par = REVERSON_PARAM_BASS;
             else if (strcmp(k, "diff") == 0)   par = REVERSON_PARAM_DIFFUSION;
+            else if (strcmp(k, "trig") == 0)     par = REVERSON_PARAM_TRIG;
+            else if (strcmp(k, "predelay") == 0) par = REVERSON_PARAM_PREDELAY;
             else { fprintf(stderr, "unknown param '%s'\n", k); return 1; }
             Reverson_set_param(core, par, v);
         }
@@ -322,6 +343,55 @@ int main(int argc, char** argv) {
         for (unsigned i = 0; i < out; ++i) { float m = (L[i] + R[i]) * 0.5f; rms += m * m; }
         rms = (float)sqrt(rms / (float)out);
         printf("%-8s: peak=%.3f rms=%.3f -> %s\n", pr->name, peak_of(L, out), rms, path);
+        free(mem);
+    }
+
+    /* knob-level acceptance presets: mbv / diiv / slowdive (same map6 curves
+       as the VST and the pedal) */
+    for (unsigned ki = 0; ki < 3u; ++ki) {
+        const KnobPreset* kp = &KNOB_PRESETS[ki];
+        if (filter && strcmp(filter, kp->name) != 0) continue;
+        void* mem = malloc(need);
+        if (!mem) { fprintf(stderr, "alloc failed\n"); return 1; }
+        Reverson* core = Reverson_init(mem, need, (float)a.rate);
+        if (!core) { fprintf(stderr, "init failed\n"); return 1; }
+        Reverson_set_6knob(core, kp->mix, kp->rev, kp->space, kp->tone, kp->grain, kp->duck);
+        Reverson_set_param(core, REVERSON_PARAM_TRIG, kp->trig);
+        Reverson_set_param(core, REVERSON_PARAM_PREDELAY, kp->predelay);
+        for (int oi = 7; oi < argc; ++oi) {   /* per-preset overrides */
+            char k[32]; float v = 0.0f;
+            if (sscanf(argv[oi], "%31[^=]=%f", k, &v) != 2) continue;
+            if (strcmp(k, "trig") == 0)      { Reverson_set_param(core, REVERSON_PARAM_TRIG, v); continue; }
+            if (strcmp(k, "predelay") == 0)  { Reverson_set_param(core, REVERSON_PARAM_PREDELAY, v); continue; }
+        }
+        if (!cold) {
+            for (unsigned i = 0; i < a.n; ++i) {
+                float l, r; Reverson_process(core, a.mono[i], &l, &r);
+            }
+        }
+        unsigned out = 0;
+        for (unsigned p = 0; p < loops; ++p)
+            for (unsigned i = 0; i < a.n; ++i) {
+                float l, r;
+                Reverson_process(core, a.mono[i], &l, &r);
+                L[out] = l; R[out] = r; ++out;
+            }
+        for (unsigned i = 0; i < out; ++i) { L[i] *= norm; R[i] *= norm; }
+        {
+            float pk = peak_of(L, out);
+            float pk2 = peak_of(R, out);
+            if (pk2 > pk) pk = pk2;
+            if (pk > 0.95f) {
+                float g = 0.95f / pk;
+                for (unsigned i = 0; i < out; ++i) { L[i] *= g; R[i] *= g; }
+            }
+        }
+        snprintf(path, sizeof(path), "%s_%s.wav", argv[2], kp->name);
+        write_wav(path, L, R, out, a.rate);
+        float rms = 0.0f;
+        for (unsigned i = 0; i < out; ++i) { float m = (L[i] + R[i]) * 0.5f; rms += m * m; }
+        rms = (float)sqrt(rms / (float)out);
+        printf("%-8s: peak=%.3f rms=%.3f -> %s\n", kp->name, peak_of(L, out), rms, path);
         free(mem);
     }
 
