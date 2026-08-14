@@ -3,6 +3,7 @@
 #include "rev_env.h"
 #include "rev_fdn.h"
 #include "rev_swell.h"
+#include "rev_rev.h"
 #include <string.h>
 
 #if REVERSON_ENABLE_FDN
@@ -21,7 +22,13 @@ struct Reverson {
     RevFdn fdn;
 #endif
     RevSwell swell;
+    RevRev rev;
     float bed;                /* FDN bed mix: 1 = bed+swell, 0 = pure swell */
+    float rev_mix;            /* reverse-layer mix derived from gate (Rev continuum) */
+    float rev_gain;           /* reverse-layer wet gain */
+    uint32_t rev_seg_len, rev_cross, rev_preoff;
+    uint32_t rev_voices;
+    int rev_rr_shape;
     float duck_gain_sm;
     float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
@@ -76,9 +83,14 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     }
     rev_swell_init(&r->swell, p + REV_FDN_TOTAL_SAMPLES, REV_SWELL_BUF_LEN,
                    p + REV_FDN_TOTAL_SAMPLES + REV_SWELL_BUF_LEN, REV_SWELL_DIFF_LEN, sample_rate);
+    /* the reverse layer SHARES the swell line memory: same length, same write
+       cadence, same wet_in value each sample (the double write is benign) ->
+       zero extra large-buffer memory */
+    rev_rev_init(&r->rev, p + REV_FDN_TOTAL_SAMPLES, REV_SWELL_BUF_LEN, sample_rate);
 #else
     rev_swell_init(&r->swell, p, REV_SWELL_BUF_LEN,
                    p + REV_SWELL_BUF_LEN, REV_SWELL_DIFF_LEN, sample_rate);
+    rev_rev_init(&r->rev, p, REV_SWELL_BUF_LEN, sample_rate);
 #endif
 
     /* defaults tuned toward DIIV-style clean+spacious */
@@ -109,6 +121,13 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->smooth_timer = 0u;
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
+    r->rev_mix = 0.0f;
+    r->rev_gain = 0.6f;
+    r->rev_seg_len = 2u;
+    r->rev_cross = 1u;
+    r->rev_preoff = 0u;
+    r->rev_voices = 1u;
+    r->rev_rr_shape = 1;
     r->env_peak = 0.0f;
     r->rev_env = 1.0f;
     r->rev_state = 0u;
@@ -132,6 +151,7 @@ void Reverson_reset(Reverson* r) {
     rev_fdn_clear(&r->fdn);
 #endif
     rev_swell_clear(&r->swell);
+    rev_rev_clear(&r->rev);
     r->env.env = 0.0f;
     r->env.onset_env = 0.0f;
     r->env.onset = 0;
@@ -349,10 +369,42 @@ static float rev_floor_of(const Reverson* r) {
 }
 
 static void rev_update_derived(Reverson* r) {
-    /* trigger settings from the trig/predelay knobs (extended in Task 8) */
+    /* trigger settings from the trig/predelay knobs */
     rev_env_set_thresh(&r->env, 0.12f + 0.38f * r->cur.trig);
     r->hold_add = (0.05f + 0.75f * r->cur.trig) * r->sample_rate;
     r->pd_samples = 0.120f * r->cur.predelay * r->sample_rate;
+
+    /* Rev continuum: forward taps fade out as the reverse layer takes over */
+    float rm = (r->cur.gate - 0.12f) * 1.282f;
+    rm = rev_clampf(rm, 0.0f, 1.0f);
+    r->rev_mix = rm;
+    rev_swell_set(&r->swell, r->cur.revlen, r->cur.gate * (1.0f - rm));
+    rev_swell_set_mod(&r->swell, r->cur.mod);
+    {
+        float dfb = r->cur.diffusion;
+        if (dfb > 0.7f) dfb = 0.7f;
+        r->swell.diff_fb[0] = dfb;
+        r->swell.diff_fb[1] = dfb * 0.9f;
+        r->swell.diff_fb[2] = dfb * 0.8f;
+    }
+    /* reverse-layer geometry: segment span follows revlen, capped inside the
+       shared 32768-sample buffer (span <= ~0.65 s @48k) */
+    float sr = r->sample_rate;
+    float span_s = 0.10f + 0.55f * r->cur.revlen;           /* 0.10..0.65 s */
+    uint32_t seg = (uint32_t)(span_s * sr);
+    if (seg < 2u) seg = 2u;
+    if (seg > REV_SWELL_BUF_LEN - 2u) seg = REV_SWELL_BUF_LEN - 2u;
+    r->rev_seg_len = seg;
+    uint32_t cross = (uint32_t)(0.03f * sr);
+    if (cross > seg / 2u) cross = seg / 2u;
+    if (cross < 1u) cross = 1u;
+    r->rev_cross = cross;
+    r->rev_preoff = (uint32_t)(0.004f * sr);
+    if (r->rev_preoff > seg - 2u) r->rev_preoff = seg > 2u ? seg - 2u : 0u;
+    r->rev_voices = 1u + (uint32_t)(2.0f * r->cur.density);  /* 1..3 */
+    r->rev_rr_shape = 1 + (int)(3.0f * r->cur.shape);        /* 1..4 */
+    if (r->rev_rr_shape > 4) r->rev_rr_shape = 4;
+    r->rev_gain = 0.6f;
 }
 
 static void rev_fire_trigger(Reverson* r) {
@@ -377,6 +429,10 @@ static void rev_fire_trigger(Reverson* r) {
     uint32_t fall_n = hold >> 1u;
     if (fall_n < 2u) fall_n = 2u;
     r->rev_fall_inc = (target - rev_floor_of(r)) / (float)fall_n;
+    /* reverse layer: re-anchor the backwards read head at the fresh trigger */
+    rev_rev_set_voices(&r->rev, r->rev_voices);
+    rev_rev_set_preoff(&r->rev, r->rev_preoff);
+    rev_rev_trigger(&r->rev, r->rev_seg_len, r->rev_cross, r->rev_rr_shape);
     r->rev_state = 1u;
     r->rev_last_trigger = r->sample_count;
 }
@@ -480,22 +536,21 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     }
 #endif
 
-    /* SPX90-style multi-head swell: gate = swell amount
-       (0 -> dry pass-through in pure-reverse mode, 1 -> full reverse). */
-    float sw_l, sw_r;
-    rev_swell_set(&r->swell, r->cur.revlen, r->cur.gate);
-    rev_swell_set_mod(&r->swell, r->cur.mod);   /* living tail on the taps */
-    /* Diffusion knob: diffuser feedback, 0 = sharp reverse gate .. ~0.7 = dense */
+    /* forward taps + reverse layer -> shared diffuser (the Rev continuum:
+       at low gate the 13 taps own the sound, at high gate the reverse layer
+       takes over and the tap loop early-outs = CPU win) */
     {
-        float dfb = r->cur.diffusion;
-        if (dfb > 0.7f) dfb = 0.7f;
-        r->swell.diff_fb[0] = dfb;
-        r->swell.diff_fb[1] = dfb * 0.9f;
-        r->swell.diff_fb[2] = dfb * 0.8f;
+        float sw_l, sw_r;
+        rev_swell_taps(&r->swell, wet_in, &sw_l, &sw_r);
+        rev_rev_write(&r->rev, wet_in);
+        float rv = rev_rev_process(&r->rev);
+        float rg = r->rev_gain * r->rev_mix;
+        sw_l += rv * rg;
+        sw_r += rv * rg;
+        rev_swell_diffuse(&r->swell, sw_l, sw_r, &sw_l, &sw_r);
+        wet_l += sw_l;
+        wet_r += sw_r;
     }
-    rev_swell_process(&r->swell, wet_in, &sw_l, &sw_r);
-    wet_l += sw_l;
-    wet_r += sw_r;
 
     float tc = 0.05f + 0.9f * r->cur.tone;
     r->wet_lp_l += (wet_l - r->wet_lp_l) * tc;

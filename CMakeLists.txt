@@ -58,6 +58,7 @@ if(BUILD_TESTING)
     reverson_add_test(test_swell)
     reverson_add_test(test_crossfeed)
     reverson_add_test(test_trigger)
+    reverson_add_test(test_v2reverse)
     reverson_add_test(test_core)
     # the ZDL shape: same core sources compiled with REVERSON_ENABLE_FDN=0
     # (the bed must compile out, shrink the state block, and stay inert).
