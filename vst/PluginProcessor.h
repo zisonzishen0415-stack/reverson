@@ -35,6 +35,5 @@ public:
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     std::vector<float> stateMem;   /* float-aligned buffer; owns core state memory */
-    std::vector<float> monoIn;     /* stereo input downmix scratch (realtime-safe, resized in prepare) */
     Reverson* core = nullptr;
 };

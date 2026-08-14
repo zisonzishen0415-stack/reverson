@@ -26,13 +26,15 @@ public:
     }
 };
 
-const char* ReversonAudioProcessorEditor::ids[2][3] = {
+const char* ReversonAudioProcessorEditor::ids[3][3] = {
     {"mix", "rev", "space"},
-    {"tone", "grain", "duck"}
+    {"tone", "grain", "duck"},
+    {"mode", "trig", "predelay"}
 };
-const char* ReversonAudioProcessorEditor::names[2][3] = {
+const char* ReversonAudioProcessorEditor::names[3][3] = {
     {"Mix", "Rev", "Space"},
-    {"Tone", "Grain", "Duck"}
+    {"Tone", "Grain", "Duck"},
+    {"Mode", "Trig", "Predelay"}
 };
 
 static const juce::Colour lcdBg(0xff0d2239);     /* deep blue LCD backlight */
@@ -44,7 +46,7 @@ static const juce::Colour bezel(0xff4a4e57);     /* screen bezel */
 ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p) {
     pageButton.setButtonText("PAGE");
-    pageButton.onClick = [this] { setPage((currentPage + 1) % 2); };
+    pageButton.onClick = [this] { setPage((currentPage + 1) % 3); };
     addAndMakeVisible(pageButton);
 
     bypassButton.setButtonText("BYPASS");
@@ -141,8 +143,20 @@ void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
 
     g.setColour(lcdLit);
     g.setFont(juce::Font(juce::Font::getDefaultMonospacedFontName(), 30.0f, juce::Font::bold));
-    g.drawText(juce::String((int)(focusVal * 100.0f + 0.5f)), mid.removeFromTop(38),
-               juce::Justification::centred, false);
+    {
+        static const char* MODE_NAMES[6] = {"Off", "Wash", "Reverse", "Gated", "Shoegaze", "Space"};
+        juce::String focusText;
+        if (juce::String(ids[currentPage][focusedSlot]) == "mode") {
+            int mi = (int)(focusVal * 5.0f + 0.5f);
+            if (mi < 0) mi = 0;
+            if (mi > 5) mi = 5;
+            focusText = MODE_NAMES[mi];
+            g.setFont(juce::Font(juce::Font::getDefaultMonospacedFontName(), 22.0f, juce::Font::bold));
+        } else {
+            focusText = juce::String((int)(focusVal * 100.0f + 0.5f));
+        }
+        g.drawText(focusText, mid.removeFromTop(38), juce::Justification::centred, false);
+    }
 
     /* value bar */
     auto bar = mid.removeFromTop(14).reduced(30, 0);
@@ -170,8 +184,17 @@ void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
                              focused ? juce::Font::bold : juce::Font::plain));
         g.drawText(names[currentPage][i], r.removeFromTop(16), juce::Justification::centred, false);
         juce::String sv("--");
-        if (auto* v = processor.apvts.getRawParameterValue(ids[currentPage][i]))
-            sv = juce::String((int)(v->load() * 100.0f + 0.5f));
+        if (auto* v = processor.apvts.getRawParameterValue(ids[currentPage][i])) {
+            if (juce::String(ids[currentPage][i]) == "mode") {
+                static const char* MODE_NAMES[6] = {"Off", "Wash", "Reverse", "Gated", "Shoegaze", "Space"};
+                int mi = (int)(v->load() * 5.0f + 0.5f);
+                if (mi < 0) mi = 0;
+                if (mi > 5) mi = 5;
+                sv = MODE_NAMES[mi];
+            } else {
+                sv = juce::String((int)(v->load() * 100.0f + 0.5f));
+            }
+        }
         g.drawText(sv, r, juce::Justification::centred, false);
     }
 }

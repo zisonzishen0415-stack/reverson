@@ -10,13 +10,18 @@ ReversonAudioProcessor::createParameterLayout() {
             id, name, juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), def));
     };
     /* 6-knob ergonomic UI; the 13 internal params are derived via
-       Reverson_map6 so the knobs never fight. */
+       Reverson_map6 so the knobs never fight. Page 3 adds the 5-position
+       mode switch plus the trig/predelay knobs. */
     add("mix", "Mix", 0.65f);
     add("rev", "Rev", 0.50f);
     add("space", "Space", 0.60f);
     add("tone", "Tone", 0.50f);
     add("grain", "Grain", 0.60f);
     add("duck", "Duck", 0.40f);
+    add("trig", "Trig", 0.35f);
+    add("predelay", "Predelay", 0.0f);
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "mode", "Mode", juce::NormalisableRange<float>(0.0f, 1.0f, 0.2f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     return layout;
 }
@@ -47,29 +52,50 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     auto* pTone = apvts.getRawParameterValue("tone");
     auto* pGrain = apvts.getRawParameterValue("grain");
     auto* pDuck = apvts.getRawParameterValue("duck");
+    auto* pTrig = apvts.getRawParameterValue("trig");
+    auto* pPredelay = apvts.getRawParameterValue("predelay");
+    auto* pMode = apvts.getRawParameterValue("mode");
     auto* pBypass = apvts.getRawParameterValue("bypass");
 
     if (core == nullptr) { buffer.clear(); return; }
     if (*pBypass > 0.5f) return;  /* bypass: dry passthrough (VST3 processes in place) */
 
     Reverson_set_6knob(core, *pMix, *pRev, *pSpace, *pTone, *pGrain, *pDuck);
+    Reverson_set_param(core, REVERSON_PARAM_TRIG, *pTrig);
+    Reverson_set_param(core, REVERSON_PARAM_PREDELAY, *pPredelay);
+    {
+        int mode = (int)(*pMode * 5.0f + 0.5f);   /* 0 = custom knobs */
+        if (mode >= 1) {
+            ReversonParams mp;
+            Reverson_mode(mode, &mp);
+            Reverson_set_param(core, REVERSON_PARAM_MIX, mp.mix);
+            Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
+            Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
+            Reverson_set_param(core, REVERSON_PARAM_REVLEN, mp.revlen);
+            Reverson_set_param(core, REVERSON_PARAM_DUCK, mp.duck);
+            Reverson_set_param(core, REVERSON_PARAM_GATE, mp.gate);
+            Reverson_set_param(core, REVERSON_PARAM_SHAPE, mp.shape);
+            Reverson_set_param(core, REVERSON_PARAM_MOD, mp.mod);
+            Reverson_set_param(core, REVERSON_PARAM_SAT, mp.sat);
+            Reverson_set_param(core, REVERSON_PARAM_WIDTH, mp.width);
+            Reverson_set_param(core, REVERSON_PARAM_DENSITY, mp.density);
+            Reverson_set_param(core, REVERSON_PARAM_BASS, mp.bass);
+            Reverson_set_param(core, REVERSON_PARAM_DIFFUSION, mp.diffusion);
+        }
+    }
 
     const int numSamples = buffer.getNumSamples();
-    /* The core is mono-in (like the pedal). On a stereo bus, sum L+R to mono
-       instead of silently discarding the right channel (which used to replace
-       the right output with a copy of the left-processed signal). */
-    if ((int)monoIn.size() < numSamples) monoIn.resize(numSamples);
+    /* stereo-in: the mono sum drives the wet engine, the dry image is kept */
     const float* inL = buffer.getReadPointer(0);
     const float* inR = buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr;
-    for (int i = 0; i < numSamples; ++i)
-        monoIn[i] = (inR != nullptr) ? 0.5f * (inL[i] + inR[i]) : inL[i];
-    const float* in = monoIn.data();
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
 
     for (int i = 0; i < numSamples; ++i) {
         float l = 0.0f, r = 0.0f;
-        Reverson_process(core, in[i], &l, &r);
+        float xl = inL[i];
+        float xr = (inR != nullptr) ? inR[i] : xl;
+        Reverson_process_stereo(core, xl, xr, &l, &r);
         if (outR != nullptr) {
             outL[i] = l;
             outR[i] = r;

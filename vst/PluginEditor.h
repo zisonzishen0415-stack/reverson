@@ -7,8 +7,8 @@ class ReversonAudioProcessor;
 /* Zoom MS-series style editor: an LCD screen (effect name, focused param
    with big value + bar, and the three knob slots K1/K2/K3) above three
    rotary knobs, plus a PAGE button (like pressing knob 3 on the pedal)
-   and a BYPASS toggle. All 12 params are laid out as 4 pages x 3 knobs,
-   mirroring the pedal's page model. */
+   and a BYPASS toggle. All 9 params are laid out as 3 pages x 3 knobs,
+   mirroring the pedal's page model (P3 = Mode/Trig/Predelay). */
 class ReversonAudioProcessorEditor : public juce::AudioProcessorEditor,
                                      private juce::Timer {
 public:
@@ -39,6 +39,6 @@ private:
     int currentPage = 0;
     int focusedSlot = 0;
 
-    static const char* ids[2][3];
-    static const char* names[2][3];
+    static const char* ids[3][3];
+    static const char* names[3][3];
 };
