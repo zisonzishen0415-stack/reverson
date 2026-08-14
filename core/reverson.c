@@ -14,6 +14,8 @@ struct Reverson {
     ReversonParams target;
     ReversonParams cur;
     float smooth_coef;
+    float smooth_coef_b;      /* per-8-sample smoothing coef */
+    uint32_t smooth_timer;
     RevEnv env;
 #if REVERSON_ENABLE_FDN
     RevFdn fdn;
@@ -89,6 +91,14 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->target.predelay = 0.0f;
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
+    {
+        float t = 1.0f - r->smooth_coef;
+        float t2 = t * t;
+        float t4 = t2 * t2;
+        float t8 = t4 * t4;
+        r->smooth_coef_b = 1.0f - t8;   /* (1-c)^8 via 3 multiplies (ZDL-safe) */
+    }
+    r->smooth_timer = 0u;
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->env_peak = 0.0f;
@@ -311,8 +321,8 @@ void Reverson_set_6knob(Reverson* r, float mix, float rev, float space,
     Reverson_set_param(r, REVERSON_PARAM_DIFFUSION, p.diffusion);
 }
 
-void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
-    float c = r->smooth_coef;
+static void rev_smooth_params(Reverson* r) {
+    float c = r->smooth_coef_b;
     r->cur.mix       = rev_smooth(r->cur.mix,       r->target.mix,       c);
     r->cur.decay     = rev_smooth(r->cur.decay,     r->target.decay,     c);
     r->cur.tone      = rev_smooth(r->cur.tone,      r->target.tone,      c);
@@ -326,8 +336,18 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->cur.density   = rev_smooth(r->cur.density,   r->target.density,   c);
     r->cur.bass      = rev_smooth(r->cur.bass,      r->target.bass,      c);
     r->cur.diffusion = rev_smooth(r->cur.diffusion, r->target.diffusion, c);
+    r->cur.trig      = rev_smooth(r->cur.trig,      r->target.trig,      c);
+    r->cur.predelay  = rev_smooth(r->cur.predelay,  r->target.predelay,  c);
+}
 
+void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     r->sample_count++;
+    r->smooth_timer++;
+    if (r->smooth_timer == 8u) {
+        r->smooth_timer = 0u;
+        rev_smooth_params(r);
+    }
+    float c = r->smooth_coef;
     rev_env_process(&r->env, in);
 
     /* reverse swell envelope with a FLOOR: the reverb is always present
