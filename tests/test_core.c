@@ -127,9 +127,10 @@ int main(void) {
         CHECK(l == 0.0f && rr == 0.0f);
     }
 
-    /* reverse swell: an isolated onset blooms the wet from a floor up to full
-       then settles back to the floor - always present (no hard gate, no
-       sudden blast). The wet responds immediately (no predelay). */
+    /* reverse swell (v2): at full reverse the forward taps are off and the
+       reverse layer replays the pre-onset tail - an onset burst (with tail
+       content in the buffer) blooms the wet from the floor up, then it
+       settles back down toward the floor (always-present, never silent). */
     Reverson_reset(r);
     Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
     Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
@@ -138,21 +139,30 @@ int main(void) {
     Reverson_set_bed(r, 0.0f);   /* default: pure reverse swell, no bed */
     Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.2f); /* short hold */
     Reverson_set_param(r, REVERSON_PARAM_DECAY, 0.7f);
-    for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr); /* silence */
-    Reverson_process(r, 1.0f, &l, &rr);  /* the onset */
-    float gpeak = 0.0f;
-    for (int i = 0; i < 88200; ++i) {    /* 2 s: swell rises, holds, cuts */
+    for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr); /* converge grid */
+    for (int i = 0; i < 4410; ++i)   /* pre-onset tail (the layer needs content) */
+        Reverson_process(r, (float)((i * 7) % 13) / 13.0f - 0.5f, &l, &rr);
+    for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr);  /* gap */
+    for (int i = 0; i < 50; ++i) Reverson_process(r, 1.0f, &l, &rr);    /* onset burst */
+    float gswell = 0.0f, gpeak = 0.0f;
+    for (int i = 0; i < 44100; ++i) {    /* 1 s: the swell window */
+        Reverson_process(r, 0.0f, &l, &rr);
+        gswell += rev_absf(l) + rev_absf(rr);
+        if (rev_absf(l) > gpeak) gpeak = rev_absf(l);
+        if (rev_absf(rr) > gpeak) gpeak = rev_absf(rr);
+    }
+    for (int i = 0; i < 44100; ++i) {    /* second s: hold + fall complete */
         Reverson_process(r, 0.0f, &l, &rr);
         if (rev_absf(l) > gpeak) gpeak = rev_absf(l);
         if (rev_absf(rr) > gpeak) gpeak = rev_absf(rr);
     }
     CHECK(gpeak > 0.002f);               /* the swell is audible after the onset */
     float gtail = 0.0f;
-    for (int i = 0; i < 44100; ++i) {    /* after the swell settles */
+    for (int i = 0; i < 44100; ++i) {    /* third s: settled at the floor */
         Reverson_process(r, 0.0f, &l, &rr);
         gtail += rev_absf(l) + rev_absf(rr);
     }
-    CHECK(gtail < gpeak);                /* settled back below the swell peak */
+    CHECK(gtail < gswell * 0.8f);        /* settled back toward the floor */
 
     /* max density (4 voices) + bass boost stays bounded and finite */
     Reverson_reset(r);
