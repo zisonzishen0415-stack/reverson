@@ -33,10 +33,14 @@ struct Reverson {
        re-trigger during the fall resumes rising from the current level
        (no dip -> no "wobble"). */
     float rev_env;
-    uint32_t rev_state;         /* 0=idle(floor), 1=rising, 2=settling */
+    uint32_t rev_state;         /* 0=idle(floor), 1=rising, 2=settling, 3=hold, 4=falling */
     float rev_env_inc;          /* current rise increment (grows each sample) */
     float rev_env_acc;          /* rise acceleration (shape-controlled) */
+    float rev_settle_inc;
     float rev_fall_inc;
+    float rev_over;             /* overshoot amount (shape-owned) */
+    uint32_t rev_hold_left;     /* hold countdown */
+    float hold_add;             /* trig knob -> extra hold samples (Task 7 wires it) */
     uint32_t rev_last_trigger;
     uint32_t sample_count;
 };
@@ -106,6 +110,10 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->rev_state = 0u;
     r->rev_env_inc = 0.0f;
     r->rev_env_acc = 0.0f;
+    r->rev_settle_inc = 0.0f;
+    r->rev_over = 0.0f;
+    r->rev_hold_left = 0u;
+    r->hold_add = 0.0f;
     r->rev_last_trigger = 0u;
     r->sample_count = 0u;
     Reverson_reset(r);
@@ -128,6 +136,10 @@ void Reverson_reset(Reverson* r) {
     r->rev_state = 0u;
     r->rev_env_inc = 0.0f;
     r->rev_env_acc = 0.0f;
+    r->rev_settle_inc = 0.0f;
+    r->rev_over = 0.0f;
+    r->rev_hold_left = 0u;
+    r->hold_add = 0.0f;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_bl_l = 0.0f;
@@ -321,6 +333,38 @@ void Reverson_set_6knob(Reverson* r, float mix, float rev, float space,
     Reverson_set_param(r, REVERSON_PARAM_DIFFUSION, p.diffusion);
 }
 
+static float rev_floor_of(const Reverson* r) {
+    float f = 1.0f - 0.65f * r->cur.gate;
+    if (f < 0.2f) f = 0.2f;
+    return f;
+}
+
+static void rev_fire_trigger(Reverson* r) {
+    float sr = r->sample_rate;
+    uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * sr);
+    if (rise < 2u) rise = 2u;
+    r->rev_over = 0.16f * r->cur.shape;
+    float target = 1.0f + r->rev_over;
+    float span = target - r->rev_env;
+    if (span < 1e-4f) span = 1e-4f;
+    float inv_rise = 1.0f / (float)rise;
+    float a = r->cur.shape;
+    r->rev_env_inc = span * inv_rise * (1.0f - a);
+    r->rev_env_acc = 2.0f * span * inv_rise * inv_rise * a;
+    uint32_t settle_n = (uint32_t)(0.04f * sr);
+    if (settle_n < 1u) settle_n = 1u;
+    r->rev_settle_inc = r->rev_over / (float)settle_n;
+    float hold_s = 0.30f + 0.70f * r->cur.density;
+    uint32_t hold = (uint32_t)(hold_s * sr + r->hold_add);
+    if (hold < 2u) hold = 2u;
+    r->rev_hold_left = hold;
+    uint32_t fall_n = hold >> 1u;
+    if (fall_n < 2u) fall_n = 2u;
+    r->rev_fall_inc = (target - rev_floor_of(r)) / (float)fall_n;
+    r->rev_state = 1u;
+    r->rev_last_trigger = r->sample_count;
+}
+
 static void rev_smooth_params(Reverson* r) {
     float c = r->smooth_coef_b;
     r->cur.mix       = rev_smooth(r->cur.mix,       r->target.mix,       c);
@@ -350,52 +394,39 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     float c = r->smooth_coef;
     rev_env_process(&r->env, in);
 
-    /* reverse swell envelope with a FLOOR: the reverb is always present
-       (floor), and each onset blooms it to 1 over revlen then settles back to
-       the floor. No hard gate -> no 'reverb absent' gaps, no sudden blasts. */
-    float rev_floor = 1.0f - 0.65f * r->cur.gate;
-    if (rev_floor < 0.2f) rev_floor = 0.2f;
-    if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
-        uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
-        if (r->sample_count - r->rev_last_trigger >= min_gap) {
-            uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * r->sample_rate);
-            if (rise < 2u) rise = 2u;
-            uint32_t release = (uint32_t)((0.30f + 0.70f * r->cur.density) * r->sample_rate);
-            if (release < 2u) release = 2u;
-            float inv_rise = 1.0f / (float)rise;
-            float a = r->cur.shape;   /* 0 linear, 1 accelerating (quadratic) */
-            float span;
-            if (r->rev_state == 0u) {
-                span = 1.0f - rev_floor;
-            } else {
-                /* already rising or settling: re-plan the remaining rise from
-                   the current level, so every note gets a full swell and a
-                   fast strum never dips back to the floor (no wobble). */
-                span = 1.0f - r->rev_env;
-                if (span < 1e-4f) span = 1e-4f;
+    /* reverse swell envelope v2: rise -> (1+over) -> settle to 1 -> hold ->
+       fall to the floor. Value-based, so a retrigger re-plans from the
+       current level (no dip -> no wobble). */
+    {
+        float floor = rev_floor_of(r);
+        if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
+            uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
+            if (r->sample_count - r->rev_last_trigger >= min_gap) {
+                rev_fire_trigger(r);   /* predelay wiring lands in Task 7 */
             }
-            r->rev_env_inc = span * inv_rise * (1.0f - a);
-            r->rev_env_acc = 2.0f * span * inv_rise * inv_rise * a;
-            r->rev_fall_inc = (1.0f - rev_floor) / (float)release;
-            r->rev_state = 1u;
-            r->rev_last_trigger = r->sample_count;
         }
-    }
-
-    /* step the swell envelope (accelerating attack: inc grows every sample) */
-    if (r->cur.gate > 0.01f) {
-        if (r->rev_state == 1u) {
-            r->rev_env += r->rev_env_inc;
-            r->rev_env_inc += r->rev_env_acc;
-            if (r->rev_env >= 1.0f) { r->rev_env = 1.0f; r->rev_state = 2u; }
-        } else if (r->rev_state == 2u) {
-            r->rev_env -= r->rev_fall_inc;
-            if (r->rev_env <= rev_floor) { r->rev_env = rev_floor; r->rev_state = 0u; }
+        if (r->cur.gate > 0.01f) {
+            float target = 1.0f + r->rev_over;
+            if (r->rev_state == 1u) {
+                r->rev_env += r->rev_env_inc;
+                r->rev_env_inc += r->rev_env_acc;
+                if (r->rev_env >= target) { r->rev_env = target; r->rev_state = 2u; }
+            } else if (r->rev_state == 2u) {
+                r->rev_env -= r->rev_settle_inc;
+                if (r->rev_env <= 1.0f) { r->rev_env = 1.0f; r->rev_state = 3u; }
+            } else if (r->rev_state == 3u) {
+                if (r->rev_hold_left > 0u) r->rev_hold_left--;
+                if (r->rev_hold_left == 0u) r->rev_state = 4u;
+            } else if (r->rev_state == 4u) {
+                r->rev_env -= r->rev_fall_inc;
+                if (r->rev_env <= floor) { r->rev_env = floor; r->rev_state = 0u; }
+            } else {
+                r->rev_env = floor;   /* state 0: stay at the floor */
+            }
+        } else {
+            r->rev_env = 1.0f;
+            r->rev_state = 0u;
         }
-        /* state 0: env stays at the floor (reverb always present) */
-    } else {
-        r->rev_env = 1.0f;
-        r->rev_state = 0u;
     }
 
     float env = rev_env_value(&r->env);
