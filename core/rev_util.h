@@ -32,6 +32,13 @@ static inline uint32_t rev_next_pow2(uint32_t v) {
     v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16;
     return v + 1u;
 }
+/* ZDL-safe zero fill: the C6000 build has no runtime memset, so clears are
+   a plain word loop instead of a library call. n is the count of uint32
+   words. */
+static inline void rev_zero32(uint32_t* dst, uint32_t n) {
+    uint32_t i;
+    for (i = 0u; i < n; ++i) dst[i] = 0u;
+}
 /* cubic soft clip (no exp/tanh; ZDL-safe). Maps [-1,1] -> [-1,1], gentle boost
    then saturate. The final clamp absorbs float rounding so the endpoints land
    on exactly +/-1 (analytic range of the cubic on [-1,1] is exactly [-1,1]). */

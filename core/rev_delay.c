@@ -1,5 +1,5 @@
 #include "rev_delay.h"
-#include <string.h>
+#include "rev_util.h"
 
 void rev_delay_init(RevDelay* d, float* mem, uint32_t len_pow2) {
     /* contract: len_pow2 must be > 0 and a power of two */
@@ -9,7 +9,7 @@ void rev_delay_init(RevDelay* d, float* mem, uint32_t len_pow2) {
     d->idx = 0u;
 }
 void rev_delay_clear(RevDelay* d) {
-    memset(d->buf, 0, d->len * sizeof(float));
+    rev_zero32((uint32_t*)d->buf, d->len);   /* len floats == len words */
     d->idx = 0u;
 }
 void rev_delay_write(RevDelay* d, float v) {
@@ -25,7 +25,7 @@ float rev_delay_read(const RevDelay* d, uint32_t delay_samples) {
 
 float rev_delay_read_frac(const RevDelay* d, float delay_samples) {
     if (delay_samples < 0.0f) delay_samples = 0.0f;
-    uint32_t i0 = (uint32_t)delay_samples;
+    uint32_t i0 = (uint32_t)(int)delay_samples;   /* int conv is native; no RTS */
     float frac = delay_samples - (float)i0;
     uint32_t i1 = i0 + 1u;
     float v0 = d->buf[(d->idx - 1u - i0) & d->mask];

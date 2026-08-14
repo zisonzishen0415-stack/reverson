@@ -184,18 +184,25 @@ core (boundedness, no NaN, 5-state envelope, trigger sensitivity/predelay,
   9-knob hardware probe that validates the synthesized LineSel-cloned edit
   handlers for knobs 4..9 (pages 2/3) on the pedal - the last open piece
   before a full 9-knob Reverson ZDL. Flash it first when the pedal arrives,
-  before the real effect.
+  before the real effect. **Built**: `build/probes/K9Probe.ZDL`.
+- **Reverson.ZDL is built** (`ZoomMultistompZDL/dist/Reverson.ZDL`, Reverb
+  category, fxid 0x019B): 9 knobs (P1 Mix/Rev/Space, P2 Tone/Grain/Duck,
+  P3 Mode/Trig/Predelay), `diiv` as the shipped default via manifest
+  fallbacks, `.fardata` 0 bytes, state in `ctx[3]` (~160 KB), the only
+  external symbol is the float-divide RTS (linker-resolved). The core was
+  made ZDL-toolchain-clean for this build: no `memset`/struct-assign/
+  float-to-uint RTS helpers, no `switch` jump tables, float-stagger math
+  instead of 64-bit division - all behavior-identical (13 desktop suites
+  still green).
 - The pedal exposes up to **9 user knobs** (3 pages x 3): pages 1-2 carry the
   6-knob mapping above; page 3 = the 5-position mode switch
   (Wash / Reverse / Gated / Shoegaze / Space - the `Reverson_mode` tables in
   `core/reverson.c`) + Trig + Predelay.
 - The ZDL build compiles the core with `REVERSON_ENABLE_FDN=0`: the FDN bed
   is compiled out entirely and ~240 KB of `ctx[3]` memory is not reserved.
-  The v2 core adds no large buffers (the reverse layer shares the swell
-  line), so the ZDL state stays ≈160 KB.
-- The v2 core is desktop-verified (13 ctest suites + render A/B presets);
-  the G1on hardware steps (K9Probe -> Reverson ZDL flash -> 3-page knob
-  check) are the remaining work.
+- The G1on hardware steps (K9Probe -> Reverson flash -> 3-page knob check)
+  are the remaining work; the full procedure + pass criteria are in
+  `research_docs/docs_REVERSON-G1ON-FLASH.md`.
 - See `research_docs/` and `ZoomMultistompZDL/docs/` for the reverse
   engineering notes (edit-handler ABI, safe DSP rules, ZDL status).
 

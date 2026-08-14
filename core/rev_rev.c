@@ -1,6 +1,5 @@
 #include "rev_rev.h"
 #include "rev_util.h"
-#include <string.h>
 
 void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rate) {
     r->buf = mem;
@@ -29,7 +28,7 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
 }
 
 void rev_rev_clear(RevRev* r) {
-    memset(r->buf, 0, r->buf_len * sizeof(float));
+    rev_zero32((uint32_t*)r->buf, r->buf_len);   /* buf_len floats == words */
     r->write_idx = 0u;
     r->anchor = 0u;
     r->seg_peak = 0.0f;
@@ -69,7 +68,7 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
        the crossfade */
     {
         uint32_t body = r->seg_len - r->cross_len; /* seg_len >= 2 and cross_len <= seg_len */
-        uint32_t rise_time = (uint32_t)(0.35f * r->sample_rate);
+        uint32_t rise_time = (uint32_t)(int)(0.35f * r->sample_rate);
         if (rise_time < 1u) rise_time = 1u;
         uint32_t rise = body < rise_time ? body : rise_time;
         if (rise < 1u) rise = 1u;
@@ -84,7 +83,9 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     int fresh = (r->v_env[0] == 0.0f && r->v_cross[0] == 0.0f);
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         if (v < r->n_voices) {
-            uint32_t pos = (uint32_t)((uint64_t)v * (uint64_t)r->seg_len / (uint64_t)r->n_voices);
+            /* stagger via float math (v*seg_len < 2^24: exact in float32; the
+               ZDL build has no 64-bit integer divide helper) */
+            uint32_t pos = (uint32_t)(int)(((float)v * (float)r->seg_len) / (float)r->n_voices);
             r->v_pos[v] = pos;
             if (fresh) {
                 if (pos >= body) {

@@ -9,7 +9,6 @@
  */
 #include "rev_swell.h"
 #include "rev_util.h"
-#include <string.h>
 
 static const float TAP_MS[REV_SWELL_TAPS] = {
     8.00f, 10.56f, 13.94f, 18.40f, 24.29f, 32.06f, 42.32f,
@@ -43,7 +42,7 @@ void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2,
     s->sample_rate = sample_rate;
     s->samples_per_ms = sample_rate * 0.001f;
     for (int i = 0; i < REV_SWELL_TAPS; ++i) {
-        uint32_t d = (uint32_t)(TAP_MS[i] * s->samples_per_ms);
+        uint32_t d = (uint32_t)(int)(TAP_MS[i] * s->samples_per_ms);
         if (d < 2u) d = 2u;
         if (d >= len_pow2 - 1u) d = len_pow2 - 1u;
         s->base_delay[i] = d;
@@ -81,7 +80,7 @@ void rev_swell_clear(RevSwell* s) {
     for (int st = 0; st < 3; ++st)
         for (int ch = 0; ch < 2; ++ch)
             rev_delay_clear(&s->diff[st][ch]);
-    memset(s->ap, 0, sizeof(s->ap));
+    rev_zero32((uint32_t*)s->ap, sizeof(s->ap) / 4u);   /* 12 float states */
     s->lfo_phase = 0.0f;
 }
 

@@ -4,7 +4,7 @@
 #include "rev_fdn.h"
 #include "rev_swell.h"
 #include "rev_rev.h"
-#include <string.h>
+#include <stddef.h>   /* NULL (cl6x does not pull it in transitively) */
 
 #if REVERSON_ENABLE_FDN
 #define REV_FDN_TOTAL_SAMPLES 61440u   /* 2048+4096+8192+16384 x2 (L/R sets) */
@@ -59,6 +59,16 @@ struct Reverson {
 
 static void rev_update_derived(Reverson* r);
 
+/* field-wise params copy: the C6000 build has no struct-assign RTS helper */
+static void rev_params_copy(ReversonParams* dst, const ReversonParams* src) {
+    dst->mix = src->mix; dst->decay = src->decay; dst->tone = src->tone;
+    dst->revlen = src->revlen; dst->duck = src->duck; dst->gate = src->gate;
+    dst->shape = src->shape; dst->mod = src->mod; dst->sat = src->sat;
+    dst->width = src->width; dst->density = src->density; dst->bass = src->bass;
+    dst->diffusion = src->diffusion; dst->trig = src->trig;
+    dst->predelay = src->predelay;
+}
+
 /* one-pole HPF coefficient a = exp(-2*pi*fc/sr); 5-term series so the
    init path stays mul/add-only (ZDL-safe) */
 static float rev_hp_coeff(float sr) {
@@ -79,7 +89,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     uint32_t need = Reverson_state_size(sample_rate);
     if (mem == NULL || mem_size < need) return NULL;
     Reverson* r = (Reverson*)mem;
-    memset(r, 0, sizeof(Reverson));
+    rev_zero32((uint32_t*)r, sizeof(Reverson) / 4u);   /* all-4-byte members */
     r->sample_rate = sample_rate;
     float* p = (float*)((uint8_t*)mem + sizeof(Reverson));
     rev_env_init(&r->env, sample_rate);
@@ -119,7 +129,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->target.diffusion = 0.30f; /* swell diffuser feedback: 0 = sharp reverse, ~0.7 = dense/smooth */
     r->target.trig = 0.5f;
     r->target.predelay = 0.0f;
-    r->cur = r->target;
+    rev_params_copy(&r->cur, &r->target);   /* field-wise: no struct-assign RTS helper */
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     {
         float t = 1.0f - r->smooth_coef;
@@ -230,43 +240,41 @@ float Reverson_test_env(const Reverson* r) { return r->rev_env; }
 
 void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
     v = rev_clampf(v, 0.0f, 1.0f);
-    switch (p) {
-        case REVERSON_PARAM_MIX:   r->target.mix = v; break;
-        case REVERSON_PARAM_DECAY: r->target.decay = v; break;
-        case REVERSON_PARAM_TONE:  r->target.tone = v; break;
-        case REVERSON_PARAM_REVLEN:r->target.revlen = v; break;
-        case REVERSON_PARAM_DUCK:  r->target.duck = v; break;
-        case REVERSON_PARAM_GATE:  r->target.gate = v; break;
-        case REVERSON_PARAM_SHAPE: r->target.shape = v; break;
-        case REVERSON_PARAM_MOD:   r->target.mod = v; break;
-        case REVERSON_PARAM_SAT:   r->target.sat = v; break;
-        case REVERSON_PARAM_WIDTH: r->target.width = v; break;
-        case REVERSON_PARAM_DENSITY:r->target.density = v; break;
-        case REVERSON_PARAM_BASS:   r->target.bass = v; break;
-        case REVERSON_PARAM_DIFFUSION:r->target.diffusion = v; break;
-        case REVERSON_PARAM_TRIG:     r->target.trig = v; break;
-        case REVERSON_PARAM_PREDELAY: r->target.predelay = v; break;
-    }
+    /* if-chain, not switch: the ZDL linker has no .switch:* section support */
+    if (p == REVERSON_PARAM_MIX)            { r->target.mix = v; }
+    else if (p == REVERSON_PARAM_DECAY)     { r->target.decay = v; }
+    else if (p == REVERSON_PARAM_TONE)      { r->target.tone = v; }
+    else if (p == REVERSON_PARAM_REVLEN)    { r->target.revlen = v; }
+    else if (p == REVERSON_PARAM_DUCK)      { r->target.duck = v; }
+    else if (p == REVERSON_PARAM_GATE)      { r->target.gate = v; }
+    else if (p == REVERSON_PARAM_SHAPE)     { r->target.shape = v; }
+    else if (p == REVERSON_PARAM_MOD)       { r->target.mod = v; }
+    else if (p == REVERSON_PARAM_SAT)       { r->target.sat = v; }
+    else if (p == REVERSON_PARAM_WIDTH)     { r->target.width = v; }
+    else if (p == REVERSON_PARAM_DENSITY)   { r->target.density = v; }
+    else if (p == REVERSON_PARAM_BASS)      { r->target.bass = v; }
+    else if (p == REVERSON_PARAM_DIFFUSION) { r->target.diffusion = v; }
+    else if (p == REVERSON_PARAM_TRIG)      { r->target.trig = v; }
+    else if (p == REVERSON_PARAM_PREDELAY)  { r->target.predelay = v; }
 }
 
 float Reverson_get_param(const Reverson* r, ReversonParam p) {
-    switch (p) {
-        case REVERSON_PARAM_MIX:   return r->target.mix;
-        case REVERSON_PARAM_DECAY: return r->target.decay;
-        case REVERSON_PARAM_TONE:  return r->target.tone;
-        case REVERSON_PARAM_REVLEN:return r->target.revlen;
-        case REVERSON_PARAM_DUCK:  return r->target.duck;
-        case REVERSON_PARAM_GATE:  return r->target.gate;
-        case REVERSON_PARAM_SHAPE: return r->target.shape;
-        case REVERSON_PARAM_MOD:   return r->target.mod;
-        case REVERSON_PARAM_SAT:   return r->target.sat;
-        case REVERSON_PARAM_WIDTH: return r->target.width;
-        case REVERSON_PARAM_DENSITY:return r->target.density;
-        case REVERSON_PARAM_BASS:   return r->target.bass;
-        case REVERSON_PARAM_DIFFUSION:return r->target.diffusion;
-        case REVERSON_PARAM_TRIG:     return r->target.trig;
-        case REVERSON_PARAM_PREDELAY: return r->target.predelay;
-    }
+    /* if-chain, not switch: the ZDL linker has no .switch:* section support */
+    if (p == REVERSON_PARAM_MIX)            return r->target.mix;
+    if (p == REVERSON_PARAM_DECAY)          return r->target.decay;
+    if (p == REVERSON_PARAM_TONE)           return r->target.tone;
+    if (p == REVERSON_PARAM_REVLEN)         return r->target.revlen;
+    if (p == REVERSON_PARAM_DUCK)           return r->target.duck;
+    if (p == REVERSON_PARAM_GATE)           return r->target.gate;
+    if (p == REVERSON_PARAM_SHAPE)          return r->target.shape;
+    if (p == REVERSON_PARAM_MOD)            return r->target.mod;
+    if (p == REVERSON_PARAM_SAT)            return r->target.sat;
+    if (p == REVERSON_PARAM_WIDTH)          return r->target.width;
+    if (p == REVERSON_PARAM_DENSITY)        return r->target.density;
+    if (p == REVERSON_PARAM_BASS)           return r->target.bass;
+    if (p == REVERSON_PARAM_DIFFUSION)      return r->target.diffusion;
+    if (p == REVERSON_PARAM_TRIG)           return r->target.trig;
+    if (p == REVERSON_PARAM_PREDELAY)       return r->target.predelay;
     return 0.0f;
 }
 
@@ -408,17 +416,17 @@ static void rev_update_derived(Reverson* r) {
        shared 32768-sample buffer (span <= ~0.65 s @48k) */
     float sr = r->sample_rate;
     float span_s = 0.10f + 0.55f * r->cur.revlen;           /* 0.10..0.65 s */
-    uint32_t seg = (uint32_t)(span_s * sr);
+    uint32_t seg = (uint32_t)(int)(span_s * sr);
     if (seg < 2u) seg = 2u;
     if (seg > REV_SWELL_BUF_LEN - 2u) seg = REV_SWELL_BUF_LEN - 2u;
     r->rev_seg_len = seg;
-    uint32_t cross = (uint32_t)(0.03f * sr);
+    uint32_t cross = (uint32_t)(int)(0.03f * sr);
     if (cross > seg / 2u) cross = seg / 2u;
     if (cross < 1u) cross = 1u;
     r->rev_cross = cross;
-    r->rev_preoff = (uint32_t)(0.004f * sr);
+    r->rev_preoff = (uint32_t)(int)(0.004f * sr);
     if (r->rev_preoff > seg - 2u) r->rev_preoff = seg > 2u ? seg - 2u : 0u;
-    r->rev_voices = 1u + (uint32_t)(2.0f * r->cur.density);  /* 1..3 */
+    r->rev_voices = 1u + (uint32_t)(int)(2.0f * r->cur.density);  /* 1..3 */
     r->rev_rr_shape = 1 + (int)(3.0f * r->cur.shape);        /* 1..4 */
     if (r->rev_rr_shape > 4) r->rev_rr_shape = 4;
     r->rev_gain = 0.6f;
@@ -426,7 +434,7 @@ static void rev_update_derived(Reverson* r) {
 
 static void rev_fire_trigger(Reverson* r) {
     float sr = r->sample_rate;
-    uint32_t rise = (uint32_t)((0.05f + 1.95f * r->cur.revlen) * sr);
+    uint32_t rise = (uint32_t)(int)((0.05f + 1.95f * r->cur.revlen) * sr);
     if (rise < 2u) rise = 2u;
     r->rev_over = 0.16f * r->cur.shape;
     float target = 1.0f + r->rev_over;
@@ -436,11 +444,11 @@ static void rev_fire_trigger(Reverson* r) {
     float a = r->cur.shape;
     r->rev_env_inc = span * inv_rise * (1.0f - a);
     r->rev_env_acc = 2.0f * span * inv_rise * inv_rise * a;
-    uint32_t settle_n = (uint32_t)(0.04f * sr);
+    uint32_t settle_n = (uint32_t)(int)(0.04f * sr);
     if (settle_n < 1u) settle_n = 1u;
     r->rev_settle_inc = r->rev_over / (float)settle_n;
     float hold_s = 0.30f + 0.70f * r->cur.density;
-    uint32_t hold = (uint32_t)(hold_s * sr + r->hold_add);
+    uint32_t hold = (uint32_t)(int)(hold_s * sr + r->hold_add);
     if (hold < 2u) hold = 2u;
     r->rev_hold_left = hold;
     uint32_t fall_n = hold >> 1u;
@@ -491,9 +499,9 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
     {
         float floor = rev_floor_of(r);
         if (rev_env_onset(&r->env) && r->cur.gate > 0.01f) {
-            uint32_t min_gap = (uint32_t)(0.02f * r->sample_rate);
+            uint32_t min_gap = (uint32_t)(int)(0.02f * r->sample_rate);
             if (r->sample_count - r->rev_last_trigger >= min_gap) {
-                uint32_t pd = (uint32_t)r->pd_samples;
+                uint32_t pd = (uint32_t)(int)r->pd_samples;
                 if (pd > 0u) r->pd_counter = pd;
                 else rev_fire_trigger(r);
             }
