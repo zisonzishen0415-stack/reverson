@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-#define REVERSON_NUM_PARAMS 13u
+#define REVERSON_NUM_PARAMS 15u
 #define REVERSON_MAX_REV_S 2.0f
 
 /* Include the 8-line FDN bed in the state block? Default on (VST / A/B).
@@ -30,11 +30,13 @@ typedef enum {
     REVERSON_PARAM_WIDTH,
     REVERSON_PARAM_DENSITY,
     REVERSON_PARAM_BASS,
-    REVERSON_PARAM_DIFFUSION
+    REVERSON_PARAM_DIFFUSION,
+    REVERSON_PARAM_TRIG,
+    REVERSON_PARAM_PREDELAY
 } ReversonParam;
 
 typedef struct {
-    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass, diffusion;
+    float mix, decay, tone, revlen, duck, gate, shape, mod, sat, width, density, bass, diffusion, trig, predelay;
 } ReversonParams;
 
 typedef struct Reverson Reverson;
@@ -48,6 +50,17 @@ void Reverson_set_param(Reverson* r, ReversonParam p, float v); /* v in [0,1] */
 float Reverson_get_param(const Reverson* r, ReversonParam p);
 /* process one mono sample -> stereo out */
 void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
+/* stereo-in variant: mono = 0.5*(in_l+in_r) drives the envelope/duck/wet
+   engine (single wet path), the DRY stereo image is preserved. The ZDL
+   callback buffers are already LLLLLLLL RRRRRRRR, so both hosts call this. */
+void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, float* out_r);
+/* 5-position mode switch (page 3 on the pedal): fills the 13 shared params.
+   mode 0 = leave the struct untouched (custom knobs); 1..5 = Wash, Reverse,
+   Gated, Shoegaze, Space; out-of-range clamps to 5. Trig/predelay are NOT
+   touched (they stay user-owned). */
+void Reverson_mode(int mode, ReversonParams* p);
+/* test hook: current reverse-gate envelope value (v2 state machine). */
+float Reverson_test_env(const Reverson* r);
 
 /* 6-knob mapping (two pages x 3). Every internal param is owned by exactly
    one knob so the knobs never fight:

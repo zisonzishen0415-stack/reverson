@@ -45,7 +45,7 @@ uint32_t Reverson_state_size(float sample_rate) {
 #if REVERSON_ENABLE_FDN
     extra += REV_FDN_TOTAL_SAMPLES;
 #endif
-    return (uint32_t)(sizeof(Reverson) + extra * sizeof(float) + 64u);
+    return (uint32_t)(sizeof(Reverson) + extra * sizeof(float) + 256u);
 }
 
 Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
@@ -85,6 +85,8 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->target.density = 0.75f;   /* swell hold time */
     r->target.bass = 0.55f;      /* slight low-mid body */
     r->target.diffusion = 0.30f; /* swell diffuser feedback: 0 = sharp reverse, ~0.7 = dense/smooth */
+    r->target.trig = 0.5f;
+    r->target.predelay = 0.0f;
     r->cur = r->target;
     r->smooth_coef = rev_coeff_from_tc(0.005f * sample_rate);
     r->duck_gain_sm = 1.0f;
@@ -131,6 +133,33 @@ void Reverson_set_bed(Reverson* r, float bed) {
 #endif
 }
 
+/* 5-position mode switch: the same tables the pedal page-3 switch uses.
+   Order: mix decay tone revlen duck gate shape mod sat width density bass diffusion */
+static const float REV_MODE_TABLES[5][13] = {
+    /* Wash */
+    { 0.60f, 0.85f, 0.45f, 0.45f, 0.35f, 0.25f, 0.50f, 0.30f, 0.15f, 0.90f, 0.95f, 0.55f, 0.35f },
+    /* Reverse */
+    { 0.80f, 0.75f, 0.40f, 0.40f, 0.30f, 0.65f, 0.70f, 0.30f, 0.15f, 0.90f, 0.80f, 0.55f, 0.15f },
+    /* Gated */
+    { 0.70f, 0.70f, 0.45f, 0.25f, 0.20f, 0.90f, 0.50f, 0.30f, 0.15f, 0.85f, 0.35f, 0.55f, 0.20f },
+    /* Shoegaze */
+    { 0.80f, 0.85f, 0.40f, 0.45f, 0.45f, 0.45f, 0.60f, 0.30f, 0.15f, 0.90f, 0.85f, 0.55f, 0.30f },
+    /* Space */
+    { 0.85f, 1.00f, 0.35f, 0.60f, 0.10f, 0.20f, 0.50f, 0.35f, 0.12f, 0.95f, 1.00f, 0.60f, 0.50f }
+};
+
+void Reverson_mode(int mode, ReversonParams* p) {
+    if (mode < 1) return;
+    if (mode > 5) mode = 5;
+    const float* t = REV_MODE_TABLES[mode - 1];
+    p->mix = t[0]; p->decay = t[1]; p->tone = t[2]; p->revlen = t[3];
+    p->duck = t[4]; p->gate = t[5]; p->shape = t[6]; p->mod = t[7];
+    p->sat = t[8]; p->width = t[9]; p->density = t[10]; p->bass = t[11];
+    p->diffusion = t[12];
+}
+
+float Reverson_test_env(const Reverson* r) { return r->rev_env; }
+
 void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
     v = rev_clampf(v, 0.0f, 1.0f);
     switch (p) {
@@ -147,6 +176,8 @@ void Reverson_set_param(Reverson* r, ReversonParam p, float v) {
         case REVERSON_PARAM_DENSITY:r->target.density = v; break;
         case REVERSON_PARAM_BASS:   r->target.bass = v; break;
         case REVERSON_PARAM_DIFFUSION:r->target.diffusion = v; break;
+        case REVERSON_PARAM_TRIG:     r->target.trig = v; break;
+        case REVERSON_PARAM_PREDELAY: r->target.predelay = v; break;
     }
 }
 
@@ -165,6 +196,8 @@ float Reverson_get_param(const Reverson* r, ReversonParam p) {
         case REVERSON_PARAM_DENSITY:return r->target.density;
         case REVERSON_PARAM_BASS:   return r->target.bass;
         case REVERSON_PARAM_DIFFUSION:return r->target.diffusion;
+        case REVERSON_PARAM_TRIG:     return r->target.trig;
+        case REVERSON_PARAM_PREDELAY: return r->target.predelay;
     }
     return 0.0f;
 }
@@ -217,6 +250,8 @@ void Reverson_map6(float mix, float rev, float space, float tone,
     p->density = dens;
     p->bass = bass;
     p->diffusion = diff;
+    p->trig = 0.5f;
+    p->predelay = 0.0f;
 }
 
 void Reverson_map3(float c, float s, float t, ReversonParams* p) {
@@ -253,6 +288,8 @@ void Reverson_map3(float c, float s, float t, ReversonParams* p) {
     p->density = dens;
     p->bass = bass;
     p->diffusion = diff;
+    p->trig = 0.5f;
+    p->predelay = 0.0f;
 }
 
 void Reverson_set_6knob(Reverson* r, float mix, float rev, float space,

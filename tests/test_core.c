@@ -198,9 +198,10 @@ int main(void) {
             for (int si = 0; si <= 4; ++si) {
                 ReversonParams mp;
                 Reverson_map6(mi / 4.0f, ri / 4.0f, si / 4.0f, 0.5f, 0.5f, 0.4f, &mp);
-                float vals[13] = {mp.mix, mp.decay, mp.tone, mp.revlen, mp.duck, mp.gate,
-                                  mp.shape, mp.mod, mp.sat, mp.width, mp.density, mp.bass, mp.diffusion};
-                for (int k = 0; k < 13; ++k) CHECK(vals[k] >= 0.0f && vals[k] <= 1.0f);
+                float vals[15] = {mp.mix, mp.decay, mp.tone, mp.revlen, mp.duck, mp.gate,
+                                  mp.shape, mp.mod, mp.sat, mp.width, mp.density, mp.bass, mp.diffusion,
+                                  mp.trig, mp.predelay};
+                for (int k = 0; k < 15; ++k) CHECK(vals[k] >= 0.0f && vals[k] <= 1.0f);
             }
         }
     }
@@ -226,6 +227,35 @@ int main(void) {
         Reverson_map6(0.5f, 0.5f, 0.5f, 0.5f, 1.0f, 0.4f, &hi);
         CHECK(hi.diffusion > lo.diffusion);  /* grain axis: smooth + flow */
         CHECK(hi.mod > lo.mod);
+    }
+
+    /* 15-param model: trig/predelay exist, clamp, and default sane */
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_TRIG) == 0.5f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_PREDELAY) == 0.0f);
+    Reverson_set_param(r, REVERSON_PARAM_TRIG, 1.5f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_TRIG) == 1.0f);
+    Reverson_set_param(r, REVERSON_PARAM_TRIG, 0.5f);
+    Reverson_set_param(r, REVERSON_PARAM_PREDELAY, -1.0f);
+    CHECK(Reverson_get_param(r, REVERSON_PARAM_PREDELAY) == 0.0f);
+
+    /* mode tables: 1..5 fill the 13 shared params in range; 0 is a no-op;
+       out-of-range clamps to 5 */
+    {
+        ReversonParams m0, m1, m5, m9;
+        m0.mix = -1.0f;
+        Reverson_mode(0, &m0);
+        CHECK(m0.mix == -1.0f);  /* mode 0 leaves the struct alone */
+        Reverson_mode(1, &m1);
+        Reverson_mode(5, &m5);
+        Reverson_mode(9, &m9);   /* clamps to 5 */
+        const float* a1 = (const float*)&m1;
+        const float* a5 = (const float*)&m5;
+        const float* a9 = (const float*)&m9;
+        for (int k = 0; k < 13; ++k) {
+            CHECK(a1[k] >= 0.0f && a1[k] <= 1.0f);
+            CHECK(a5[k] >= 0.0f && a5[k] <= 1.0f);
+            CHECK(a9[k] == a5[k]);
+        }
     }
 
     /* sample-rate portability: 48 kHz stays finite and bounded with the
