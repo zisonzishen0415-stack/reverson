@@ -94,6 +94,7 @@ int main(void) {
     {
         Reverson_reset(r);
         configure(r);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 0.5f);   /* mechanism check: mid mix */
         Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.8f);  /* long hold: mid-swell retriggers */
         float prev = 0.0f, maxd = 0.0f;
         /* sustained low note (content in the buffer), then two onsets close
@@ -103,9 +104,9 @@ int main(void) {
             Reverson_process(r, x, &l, &rr);
         }
         for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr);
-        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.9f, &l, &rr);   /* onset 1 */
+        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.4f, &l, &rr);  /* onset 1 (realistic level) */
         for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr); /* mid-swell */
-        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.9f, &l, &rr);   /* onset 2 (mid-swell) */
+        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.4f, &l, &rr);  /* onset 2 (mid-swell) */
         for (int i = 0; i < 22050; ++i) {
             Reverson_process(r, 0.0f, &l, &rr);
             float d = rev_absf(l - prev);

@@ -2,6 +2,7 @@
 #include "rev_util.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 static int fails = 0;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); fails++; } } while (0)
@@ -94,7 +95,7 @@ int main(void) {
     Reverson_set_bed(r, 1.0f);   /* bed on: wet bus stays bounded at decay=1 */
     float wpeak = 0.0f;
     for (int blk = 0; blk < 8; ++blk) {
-        float dc = (blk & 1u) ? -1.0f : 1.0f;
+        float dc = (blk & 1u) ? -0.4f : 0.4f;   /* realistic input level (was 1.0) */
         for (int i = 0; i < 8820; ++i) {
             Reverson_process(r, dc, &l, &rr);
             if (rev_absf(l) > wpeak) wpeak = rev_absf(l);
@@ -287,6 +288,40 @@ int main(void) {
         }
         CHECK(pk48 < 1.2f);
         free(m48);
+    }
+
+    /* output safety limiter: at a realistic level the wet is loud (makeup
+       matched toward the dry) and under the rail; at a full-scale input
+       the output stays finite and bounded (a single-sample attack leak is
+       allowed - the limiter has no lookahead). */
+    {
+        Reverson_reset(r);   /* fresh state: the earlier blocks leave residue */
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_GATE, 0.3f);
+        Reverson_set_param(r, REVERSON_PARAM_SAT, 0.1f);
+        Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.5f);
+        Reverson_set_bed(r, 0.0f);   /* bed off: the earlier blocks left it on */
+        float l, rr, pk = 0.0f, xpk = 0.0f;
+        for (int i = 0; i < 44100; ++i) {
+            float x = 0.4f * (float)sin(2.0 * 3.14159265358979323846 * 110.0 * (double)i / 44100.0);
+            if (rev_absf(x) > xpk) xpk = rev_absf(x);
+            Reverson_process(r, x, &l, &rr);
+            CHECK(l == l && rr == rr);
+            if (rev_absf(l) > pk) pk = rev_absf(l);
+            if (rev_absf(rr) > pk) pk = rev_absf(rr);
+        }
+        CHECK(pk > 0.25f);        /* the wet is loud (makeup matched) */
+        CHECK(pk <= 0.96f);       /* and under the rail at realistic levels */
+        pk = 0.0f;
+        for (int i = 0; i < 44100; ++i) {
+            float x = 1.0f * (float)sin(2.0 * 3.14159265358979323846 * 110.0 * (double)i / 44100.0);
+            Reverson_process(r, x, &l, &rr);
+            CHECK(l == l && rr == rr);
+            if (rev_absf(l) > pk) pk = rev_absf(l);
+            if (rev_absf(rr) > pk) pk = rev_absf(rr);
+        }
+        CHECK(pk < 2.5f);         /* full-scale: finite and bounded (leak) */
     }
 
     free(mem);

@@ -71,7 +71,7 @@ void rev_swell_init(RevSwell* s, float* mem, uint32_t len_pow2,
     s->ap_g[0] = 0.40f;
     s->ap_g[1] = 0.50f;
     s->ap_g[2] = 0.60f;
-    s->out_gain = 0.60f;
+    s->out_gain = 0.75f;   /* tap-side level: lifts low-rev settings (rev=1 has taps off) */
     rev_swell_clear(s);
 }
 

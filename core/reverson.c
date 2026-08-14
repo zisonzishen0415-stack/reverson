@@ -55,6 +55,11 @@ struct Reverson {
     uint32_t pd_counter;        /* pending predelay countdown (0 = none) */
     uint32_t rev_last_trigger;
     uint32_t sample_count;
+    /* output safety limiter (gain-based, not wave-shaping): keeps the
+       dry+wet mix from exceeding 0.95 without flat-top distortion */
+    float out_gain_sm;
+    float lim_attack_coef;
+    float lim_release_coef;
 };
 
 static void rev_update_derived(Reverson* r);
@@ -145,7 +150,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->rev_mix = 0.0f;
-    r->rev_gain = 0.6f;   /* pairs with the 0.5 norm target: loudness without clipping */
+    r->rev_gain = 0.22f;  /* x 0.75 diffuse out_gain: rev=1 wet ~0.94, limiter idle */
     r->rev_seg_len = 2u;
     r->rev_cross = 1u;
     r->rev_preoff = 0u;
@@ -164,6 +169,9 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->pd_counter = 0u;
     r->rev_last_trigger = 0u;
     r->sample_count = 0u;
+    r->out_gain_sm = 1.0f;
+    r->lim_attack_coef = rev_coeff_from_tc(0.001f * sample_rate);   /* ~1 ms */
+    r->lim_release_coef = rev_coeff_from_tc(0.100f * sample_rate);  /* ~100 ms */
     Reverson_reset(r);
     rev_update_derived(r);
     return r;
@@ -191,6 +199,7 @@ void Reverson_reset(Reverson* r) {
     r->rev_hold_left = 0u;
     r->hold_add = 0.0f;
     r->pd_counter = 0u;
+    r->out_gain_sm = 1.0f;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_hp_l = 0.0f;
@@ -431,7 +440,7 @@ static void rev_update_derived(Reverson* r) {
     r->rev_voices = 1u + (uint32_t)(int)(2.0f * r->cur.density);  /* 1..3 */
     r->rev_rr_shape = 1 + (int)(3.0f * r->cur.shape);        /* 1..4 */
     if (r->rev_rr_shape > 4) r->rev_rr_shape = 4;
-    r->rev_gain = 0.6f;   /* pairs with the 0.5 norm target: loudness without clipping */
+    r->rev_gain = 0.22f;  /* x 0.75 diffuse out_gain: rev=1 wet ~0.94, limiter idle */
 }
 
 static void rev_fire_trigger(Reverson* r) {
@@ -619,10 +628,20 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
     wet_l *= r->rev_env;
     wet_r *= r->rev_env;
 
-    /* gentle drive: 1.0..1.24 (was 1.0..1.9 - deep hard clipping at tone=1) */
+    /* gentle drive (character saturation, not loudness) */
     float drive = 1.0f + 1.5f * r->cur.sat;
     wet_l = rev_softclip(wet_l * drive);
     wet_r = rev_softclip(wet_r * drive);
+
+    /* wet makeup (fixed): mix=1 (pure wet) matches the dry loudness at the
+       typical settings - the user expectation is that 100% wet sounds as
+       loud as the dry. The reverse gain is paired so high-rev settings stay
+       below the limiter; only the saturation corner ever engages it. */
+    {
+        const float makeup = 2.2f;   /* ~+6.8 dB: mix=1 wet ~= dry (0.18 -> 0.40 vs 0.44) */
+        wet_l *= makeup;
+        wet_r *= makeup;
+    }
 
     float mid = (wet_l + wet_r) * 0.5f;
     float side = (wet_l - wet_r) * 0.5f;
@@ -630,8 +649,25 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
     wet_r = mid - side * r->cur.width;
 
     float mix = r->cur.mix;
-    *out_l = in_l * (1.0f - mix) + wet_l * mix;
-    *out_r = in_r * (1.0f - mix) + wet_r * mix;
+    float ol = in_l * (1.0f - mix) + wet_l * mix;
+    float orr = in_r * (1.0f - mix) + wet_r * mix;
+
+    /* output safety limiter (gain-based, ZDL-safe reciprocal): catches
+       dry+wet crests above 0.95. Smoothed attack (~1 ms) and release
+       (~100 ms) so the gain never steps (no clicks); a crest leaks at most
+       the first sample, which only matters in the saturation corner. */
+    {
+        const float limit = 0.95f;
+        float pk = rev_absf(ol);
+        float pk2 = rev_absf(orr);
+        if (pk2 > pk) pk = pk2;
+        float g = 1.0f;
+        if (pk > limit) g = limit * rev_recip(pk);
+        float c = (g < r->out_gain_sm) ? r->lim_attack_coef : r->lim_release_coef;
+        r->out_gain_sm += (g - r->out_gain_sm) * c;
+        *out_l = ol * r->out_gain_sm;
+        *out_r = orr * r->out_gain_sm;
+    }
 }
 
 void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {

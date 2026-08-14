@@ -39,6 +39,18 @@ static inline void rev_zero32(uint32_t* dst, uint32_t n) {
     uint32_t i;
     for (i = 0u; i < n; ++i) dst[i] = 0u;
 }
+/* Newton reciprocal (mul/add only - ZDL-safe; no divide helper needed).
+   3 iterations: ~1e-7 relative error on [0.9, 2]. Used by the output
+   limiter's gain computation. */
+static inline float rev_recip(float x) {
+    union { float f; uint32_t u; } v, y;
+    v.f = x;
+    y.u = 0x7EF311C3u - v.u;
+    y.f = y.f * (2.0f - (x * y.f));
+    y.f = y.f * (2.0f - (x * y.f));
+    y.f = y.f * (2.0f - (x * y.f));
+    return y.f;
+}
 /* cubic soft clip (no exp/tanh; ZDL-safe). Maps [-1,1] -> [-1,1], gentle boost
    then saturate. The final clamp absorbs float rounding so the endpoints land
    on exactly +/-1 (analytic range of the cubic on [-1,1] is exactly [-1,1]). */
