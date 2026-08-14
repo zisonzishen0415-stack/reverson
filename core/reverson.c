@@ -150,7 +150,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->rev_mix = 0.0f;
-    r->rev_gain = 0.22f;  /* x 0.75 diffuse out_gain: rev=1 wet ~0.94, limiter idle */
+    r->rev_gain = 0.16f;  /* x 3.0 makeup: rev=1 wet ~0.7, limiter idle */
     r->rev_seg_len = 2u;
     r->rev_cross = 1u;
     r->rev_preoff = 0u;
@@ -442,7 +442,7 @@ static void rev_update_derived(Reverson* r) {
     r->rev_voices = 1u + (uint32_t)(int)(2.0f * r->cur.density);  /* 1..3 */
     r->rev_rr_shape = 1 + (int)(3.0f * r->cur.shape);        /* 1..4 */
     if (r->rev_rr_shape > 4) r->rev_rr_shape = 4;
-    r->rev_gain = 0.22f;  /* x 0.75 diffuse out_gain: rev=1 wet ~0.94, limiter idle */
+    r->rev_gain = 0.16f;  /* x 3.0 makeup: rev=1 wet ~0.7, limiter idle */
 }
 
 static void rev_fire_trigger(Reverson* r) {
@@ -640,7 +640,7 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
        loud as the dry. The reverse gain is paired so high-rev settings stay
        below the limiter; only the saturation corner ever engages it. */
     {
-        const float makeup = 2.2f;   /* ~+6.8 dB: mix=1 wet ~= dry (0.18 -> 0.40 vs 0.44) */
+        const float makeup = 3.0f;   /* ~+9.5 dB wet: wash settings clearly louder than the dry */
         wet_l *= makeup;
         wet_r *= makeup;
     }
