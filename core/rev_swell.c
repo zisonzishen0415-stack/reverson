@@ -147,7 +147,11 @@ void rev_swell_diffuse(RevSwell* s, float l, float r, float* out_l, float* out_r
             rev_delay_write(d, x + s->diff_fb[st] * bufout);
             if (ch == 0) l = y; else r = y;
         }
+        /* crossfeed cap: correlated L/R through (1+cf)^3 stages can stack
+           past the wet clip rail at max diffusion - cap so the extreme
+           corner stays soft, not flat-topped */
         float cf = 0.35f * s->diff_fb[st];
+        if (cf > 0.22f) cf = 0.22f;
         float l2 = l + cf * r;
         float r2 = r + cf * l;
         l = l2;

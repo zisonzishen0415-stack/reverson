@@ -145,7 +145,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->rev_mix = 0.0f;
-    r->rev_gain = 0.35f;  /* headroom: the layer normalizes to ~0.9 peak */
+    r->rev_gain = 0.6f;   /* pairs with the 0.5 norm target: loudness without clipping */
     r->rev_seg_len = 2u;
     r->rev_cross = 1u;
     r->rev_preoff = 0u;
@@ -431,7 +431,7 @@ static void rev_update_derived(Reverson* r) {
     r->rev_voices = 1u + (uint32_t)(int)(2.0f * r->cur.density);  /* 1..3 */
     r->rev_rr_shape = 1 + (int)(3.0f * r->cur.shape);        /* 1..4 */
     if (r->rev_rr_shape > 4) r->rev_rr_shape = 4;
-    r->rev_gain = 0.35f;  /* headroom: the layer normalizes to ~0.9 peak */
+    r->rev_gain = 0.6f;   /* pairs with the 0.5 norm target: loudness without clipping */
 }
 
 static void rev_fire_trigger(Reverson* r) {
@@ -620,7 +620,7 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
     wet_r *= r->rev_env;
 
     /* gentle drive: 1.0..1.24 (was 1.0..1.9 - deep hard clipping at tone=1) */
-    float drive = 1.0f + 0.8f * r->cur.sat;
+    float drive = 1.0f + 1.5f * r->cur.sat;
     wet_l = rev_softclip(wet_l * drive);
     wet_r = rev_softclip(wet_r * drive);
 

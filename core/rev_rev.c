@@ -93,7 +93,11 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
         r->env_inc = 1.0f / (float)rise;
     }
     r->shape = (shape < 1) ? 1 : ((shape > 4) ? 4 : shape);
-    r->norm_target = rev_clampf(0.9f / (r->seg_peak + 1e-6f), 0.1f, 3.0f);
+    /* normalization target 0.5 (was 0.9): the reverse layer + rev_gain
+       restores the level; keeping the target lower bounds the worst-case
+       wet (diffuser x drive x env) below the clip rail - loudness comes
+       from the gain structure, not from hard clipping */
+    r->norm_target = rev_clampf(0.5f / (r->seg_peak + 1e-6f), 0.1f, 3.0f);
     r->anchor = r->write_idx;
     uint32_t body = r->seg_len - r->cross_len;
     /* smooth retrigger: keep the envelope if a swell is already playing so a
