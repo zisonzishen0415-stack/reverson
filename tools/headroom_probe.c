@@ -5,9 +5,11 @@
  *   - RMS
  * Optional 'sweep': ramps the rev knob 0->1->0 over the file while the
  * space knob ramps the other way - exposes 8-sample-grid gain stepping.
+ * Optional 'mode=N' (1..5): applies the mode's character params after the
+ * knobs (mix/duck stay knob-owned, like the plugin).
  *
  * usage: headroom_probe <in.wav> <mix> <rev> <space> <tone> <grain> <duck>
- *         [trig] [predelay] [sweep]
+ *         [trig] [predelay] [sweep|mode=N]
  * Build: linked against reverson_core (see tools/CMakeLists.txt).
  */
 #ifdef _MSC_VER
@@ -90,7 +92,12 @@ int main(int argc, char** argv) {
     float tone = (float)atof(argv[5]), grain = (float)atof(argv[6]), duck = (float)atof(argv[7]);
     float trig = argc > 8 ? (float)atof(argv[8]) : 0.35f;
     float predelay = argc > 9 ? (float)atof(argv[9]) : 0.0f;
-    int sweep = (argc > 10 && strcmp(argv[10], "sweep") == 0);
+    int sweep = 0;
+    int mode = 0;
+    if (argc > 10) {
+        if (strcmp(argv[10], "sweep") == 0) sweep = 1;
+        else if (sscanf(argv[10], "mode=%d", &mode) == 1) { /* mode 1..5 */ }
+    }
 
     uint32_t need = Reverson_state_size((float)a.rate);
     void* mem = malloc(need);
@@ -100,6 +107,21 @@ int main(int argc, char** argv) {
     Reverson_set_6knob(core, mix, rev, space, tone, grain, duck);
     Reverson_set_param(core, REVERSON_PARAM_TRIG, trig);
     Reverson_set_param(core, REVERSON_PARAM_PREDELAY, predelay);
+    if (mode >= 1) {   /* mode owns the 11 character params (mix/duck knob-owned) */
+        ReversonParams mp;
+        Reverson_mode(mode, &mp);
+        Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
+        Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
+        Reverson_set_param(core, REVERSON_PARAM_REVLEN, mp.revlen);
+        Reverson_set_param(core, REVERSON_PARAM_GATE, mp.gate);
+        Reverson_set_param(core, REVERSON_PARAM_SHAPE, mp.shape);
+        Reverson_set_param(core, REVERSON_PARAM_MOD, mp.mod);
+        Reverson_set_param(core, REVERSON_PARAM_SAT, mp.sat);
+        Reverson_set_param(core, REVERSON_PARAM_WIDTH, mp.width);
+        Reverson_set_param(core, REVERSON_PARAM_DENSITY, mp.density);
+        Reverson_set_param(core, REVERSON_PARAM_BASS, mp.bass);
+        Reverson_set_param(core, REVERSON_PARAM_DIFFUSION, mp.diffusion);
+    }
 
     /* converge the param grid before measuring */
     {

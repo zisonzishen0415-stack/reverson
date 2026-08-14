@@ -285,8 +285,19 @@ int main(int argc, char** argv) {
                 if (mi < 1) mi = 1;
                 if (mi > 5) mi = 5;
                 ReversonParams mp;
-                Reverson_mode(mi, &mp);
-                apply_params(core, &mp);
+                Reverson_mode(mi, &mp);   /* mode owns the 11 character params;
+                                             mix/duck stay knob-owned */
+                Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
+                Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
+                Reverson_set_param(core, REVERSON_PARAM_REVLEN, mp.revlen);
+                Reverson_set_param(core, REVERSON_PARAM_GATE, mp.gate);
+                Reverson_set_param(core, REVERSON_PARAM_SHAPE, mp.shape);
+                Reverson_set_param(core, REVERSON_PARAM_MOD, mp.mod);
+                Reverson_set_param(core, REVERSON_PARAM_SAT, mp.sat);
+                Reverson_set_param(core, REVERSON_PARAM_WIDTH, mp.width);
+                Reverson_set_param(core, REVERSON_PARAM_DENSITY, mp.density);
+                Reverson_set_param(core, REVERSON_PARAM_BASS, mp.bass);
+                Reverson_set_param(core, REVERSON_PARAM_DIFFUSION, mp.diffusion);
                 continue;
             }
             if (strcmp(k, "mix") == 0 || strcmp(k, "rev") == 0 || strcmp(k, "space") == 0

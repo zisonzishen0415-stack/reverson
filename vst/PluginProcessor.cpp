@@ -67,12 +67,11 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         int mode = (int)(*pMode * 5.0f + 0.5f);   /* 0 = custom knobs */
         if (mode >= 1) {
             ReversonParams mp;
-            Reverson_mode(mode, &mp);
-            Reverson_set_param(core, REVERSON_PARAM_MIX, mp.mix);
+            Reverson_mode(mode, &mp);   /* mode owns the 11 character params;
+                                           mix/duck stay with the user knobs */
             Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
             Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
             Reverson_set_param(core, REVERSON_PARAM_REVLEN, mp.revlen);
-            Reverson_set_param(core, REVERSON_PARAM_DUCK, mp.duck);
             Reverson_set_param(core, REVERSON_PARAM_GATE, mp.gate);
             Reverson_set_param(core, REVERSON_PARAM_SHAPE, mp.shape);
             Reverson_set_param(core, REVERSON_PARAM_MOD, mp.mod);

@@ -249,24 +249,54 @@ int main(void) {
     Reverson_set_param(r, REVERSON_PARAM_PREDELAY, -1.0f);
     CHECK(Reverson_get_param(r, REVERSON_PARAM_PREDELAY) == 0.0f);
 
-    /* mode tables: 1..5 fill the 13 shared params in range; 0 is a no-op;
+    /* mode tables: 1..5 fill the 11 CHARACTER params (mix/duck stay
+       user-owned - mix=0 must always be pure dry); 0 is a no-op;
        out-of-range clamps to 5 */
     {
         ReversonParams m0, m1, m5, m9;
         m0.mix = -1.0f;
         Reverson_mode(0, &m0);
         CHECK(m0.mix == -1.0f);  /* mode 0 leaves the struct alone */
+        m1.mix = 0.123f; m1.duck = 0.456f;   /* must stay untouched */
+        m5.mix = 0.123f; m5.duck = 0.456f;
+        m9.mix = 0.123f; m9.duck = 0.456f;
         Reverson_mode(1, &m1);
         Reverson_mode(5, &m5);
         Reverson_mode(9, &m9);   /* clamps to 5 */
+        CHECK(m1.mix == 0.123f && m1.duck == 0.456f);
+        CHECK(m5.mix == 0.123f && m5.duck == 0.456f);
+        CHECK(m9.mix == 0.123f && m9.duck == 0.456f);
         const float* a1 = (const float*)&m1;
         const float* a5 = (const float*)&m5;
         const float* a9 = (const float*)&m9;
         for (int k = 0; k < 13; ++k) {
+            if (k == 0 || k == 4) continue;   /* mix, duck: user-owned, untouched */
             CHECK(a1[k] >= 0.0f && a1[k] <= 1.0f);
             CHECK(a5[k] >= 0.0f && a5[k] <= 1.0f);
             CHECK(a9[k] == a5[k]);
         }
+    }
+
+    /* mix=0 with a mode active is still PURE DRY: the user-facing Mix knob
+       always wins over the mode's character params (regression for the
+       'mix=0 still has reverb' report) */
+    {
+        ReversonParams mp;
+        Reverson_mode(2, &mp);   /* Reverse: the hottest character params */
+        Reverson_set_param(r, REVERSON_PARAM_GATE, mp.gate);
+        Reverson_set_param(r, REVERSON_PARAM_SHAPE, mp.shape);
+        Reverson_set_param(r, REVERSON_PARAM_REVLEN, mp.revlen);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_bed(r, 0.0f);
+        for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr); /* converge */
+        int dry_ok = 1;
+        for (int i = 0; i < 1000; ++i) {
+            float x = (float)((i * 37) % 101) / 101.0f - 0.5f;
+            Reverson_process(r, x, &l, &rr);
+            if (l != x || rr != x) dry_ok = 0;
+        }
+        CHECK(dry_ok == 1);
     }
 
     /* sample-rate portability: 48 kHz stays finite and bounded with the

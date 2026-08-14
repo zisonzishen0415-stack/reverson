@@ -54,10 +54,11 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r);
    engine (single wet path), the DRY stereo image is preserved. The ZDL
    callback buffers are already LLLLLLLL RRRRRRRR, so both hosts call this. */
 void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, float* out_r);
-/* 5-position mode switch (page 3 on the pedal): fills the 13 shared params.
+/* 5-position mode switch (page 3 on the pedal): fills the 11 CHARACTER
+   params (decay tone revlen gate shape mod sat width density bass diffusion).
    mode 0 = leave the struct untouched (custom knobs); 1..5 = Wash, Reverse,
-   Gated, Shoegaze, Space; out-of-range clamps to 5. Trig/predelay are NOT
-   touched (they stay user-owned). */
+   Gated, Shoegaze, Space; out-of-range clamps to 5. Mix and duck are NOT
+   touched (they stay user-owned: mix=0 must always be pure dry). */
 void Reverson_mode(int mode, ReversonParams* p);
 /* test hook: current reverse-gate envelope value (v2 state machine). */
 float Reverson_test_env(const Reverson* r);

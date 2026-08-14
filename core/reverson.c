@@ -239,8 +239,10 @@ void Reverson_mode(int mode, ReversonParams* p) {
     if (mode < 1) return;
     if (mode > 5) mode = 5;
     const float* t = REV_MODE_TABLES[mode - 1];
-    p->mix = t[0]; p->decay = t[1]; p->tone = t[2]; p->revlen = t[3];
-    p->duck = t[4]; p->gate = t[5]; p->shape = t[6]; p->mod = t[7];
+    /* Mode owns ONLY the character params: mix and duck stay user-owned
+       (the user's Mix knob must always work - mix=0 is always pure dry). */
+    p->decay = t[1]; p->tone = t[2]; p->revlen = t[3];
+    p->gate = t[5]; p->shape = t[6]; p->mod = t[7];
     p->sat = t[8]; p->width = t[9]; p->density = t[10]; p->bass = t[11];
     p->diffusion = t[12];
 }
