@@ -14,6 +14,10 @@ void rev_env_init(RevEnv* e, float sample_rate) {
     e->was_playing = 0;
     e->onset = 0;
 }
+
+void rev_env_set_thresh(RevEnv* e, float rel) {
+    e->onset_thresh = rev_clampf(rel, 0.0f, 1.0f);
+}
 void rev_env_process(RevEnv* e, float x) {
     float a = rev_absf(x);
     float coef = (a > e->env) ? e->attack_coef : e->release_coef;

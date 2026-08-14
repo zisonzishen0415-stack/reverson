@@ -74,6 +74,17 @@ int main(void) {
     }
     CHECK(quiet_onsets == 0);
 
+    /* settable relative threshold (trigger sensitivity) */
+    rev_env_init(&e, 44100.0f);
+    rev_env_set_thresh(&e, 0.5f);
+    CHECK(e.onset_thresh == 0.5f);
+    rev_env_set_thresh(&e, 2.0f);   /* clamps to 1 */
+    CHECK(e.onset_thresh == 1.0f);
+    rev_env_set_thresh(&e, -1.0f);  /* clamps to 0 */
+    CHECK(e.onset_thresh == 0.0f);
+    rev_env_set_thresh(&e, 0.35f);
+    CHECK(e.onset_thresh == 0.35f);
+
     if (fails == 0) { printf("test_env PASS\n"); return 0; }
     printf("test_env FAILED (%d)\n", fails);
     return 1;

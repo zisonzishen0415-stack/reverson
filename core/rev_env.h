@@ -16,6 +16,9 @@ typedef struct {
 } RevEnv;
 
 void rev_env_init(RevEnv* e, float sample_rate);
+/* relative onset threshold in [0,1] (fraction of the slow onset peak);
+   higher = harder to trigger. Clamped internally. */
+void rev_env_set_thresh(RevEnv* e, float rel);
 /* feed one input sample; updates envelope and onset flag */
 void rev_env_process(RevEnv* e, float x);
 float rev_env_value(const RevEnv* e);
