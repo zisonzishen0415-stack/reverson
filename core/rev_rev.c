@@ -19,6 +19,7 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
     r->env_inc = 1.0f;
     r->cross_len = 1u;
     r->cross_inc = 1.0f;
+    r->pre_off = 0u;
     r->shape = 1;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
@@ -50,6 +51,10 @@ void rev_rev_set_voices(RevRev* r, uint32_t voices) {
     r->voice_scale = 1.0f / (float)voices;
 }
 
+void rev_rev_set_preoff(RevRev* r, uint32_t samples) {
+    r->pre_off = samples;
+}
+
 /* Division here is control-rate (once per trigger), not per-sample. */
 void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int shape) {
     if (seg_len < 2u) seg_len = 2u;
@@ -58,6 +63,7 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     r->cross_len = cross_samples < 1u ? 1u : cross_samples;
     if (r->cross_len > r->seg_len) r->cross_len = r->seg_len;
     r->cross_inc = 1.0f / (float)r->cross_len;
+    if (r->pre_off > r->seg_len - 2u) r->pre_off = r->seg_len > 2u ? r->seg_len - 2u : 0u;
     /* swell rise bounded to ~0.35 s: long segments do not create a long
        pre-delay; env holds at 1.0 for the rest of the body, then falls in
        the crossfade */
@@ -118,7 +124,7 @@ float rev_rev_process(RevRev* r) {
     uint32_t body = r->seg_len - r->cross_len;
     for (uint32_t v = 0; v < r->n_voices; ++v) {
         uint32_t pos = r->v_pos[v];
-        uint32_t read_idx = (r->anchor - 1u - pos) & r->mask;
+        uint32_t read_idx = (r->anchor - 1u - r->pre_off - pos) & r->mask;
         float rev = r->buf[read_idx];
 
         float env = r->v_env[v];

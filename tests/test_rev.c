@@ -120,6 +120,27 @@ int main(void) {
     float single0 = rev_rev_process(&r);
     CLOSE(single0, 0.9f, 0.15f);
 
+    /* pre_off: the read head skips the newest pre_off samples (the attack
+       transient); content comes from the pre-onset tail instead. */
+    rev_rev_clear(&r);
+    for (int i = 0; i < 10; ++i) rev_rev_write(&r, (float)i);   /* record 0..9 */
+    rev_rev_set_preoff(&r, 2u);
+    rev_rev_trigger(&r, 10u, 1u, 1);
+    float po0 = rev_rev_process(&r);   /* buf[anchor-1-2] = 7, env 0.1 */
+    CLOSE(po0, 0.7f, 0.15f);
+    /* pre_off clamps into the segment: oversized value stays finite */
+    rev_rev_set_preoff(&r, 100u);
+    rev_rev_trigger(&r, 10u, 1u, 1);
+    float po1 = rev_rev_process(&r);
+    CHECK(is_finite_f(po1));
+    /* pre_off back to 0: original first-sample behavior is unchanged */
+    rev_rev_clear(&r);
+    for (int i = 0; i < 10; ++i) rev_rev_write(&r, (float)i);
+    rev_rev_set_preoff(&r, 0u);
+    rev_rev_trigger(&r, 10u, 1u, 1);
+    float po2 = rev_rev_process(&r);
+    CLOSE(po2, 0.9f, 0.15f);
+
     if (fails == 0) { printf("test_rev PASS\n"); return 0; }
     printf("test_rev FAILED (%d)\n", fails);
     return 1;

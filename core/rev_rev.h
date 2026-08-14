@@ -59,6 +59,7 @@ typedef struct {
     float env_inc;
     uint32_t cross_len;
     float cross_inc;
+    uint32_t pre_off;  /* newest samples to skip at the segment head (attack transient) */
     float voice_scale;
     int shape;
 } RevRev;
@@ -67,6 +68,9 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
 void rev_rev_clear(RevRev* r);
 /* voices in [1, REV_REV_MAX_VOICES]; takes effect at the next trigger */
 void rev_rev_set_voices(RevRev* r, uint32_t voices);
+/* samples to skip at the segment head (0..seg_len-2, clamped in trigger);
+   applied at the next rev_rev_trigger. Default 0 (original behavior). */
+void rev_rev_set_preoff(RevRev* r, uint32_t samples);
 void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int shape);
 void rev_rev_write(RevRev* r, float x);
 float rev_rev_process(RevRev* r);
