@@ -32,6 +32,9 @@ struct Reverson {
     float duck_gain_sm;
     float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
+    float wet_hp_l, wet_hp_r;        /* one-pole HPF state */
+    float wet_hp_x1_l, wet_hp_x1_r;  /* HPF previous input */
+    float hp_a;                      /* HPF coefficient (init-time) */
     float wet_bl_l, wet_bl_r;   /* bass low-shelf one-pole state */
     /* reverse-gate envelope (classic SPX90/Alesis reverse reverb):
        the wet amplitude swells then cuts with ZERO predelay. Attack is
@@ -55,6 +58,13 @@ struct Reverson {
 };
 
 static void rev_update_derived(Reverson* r);
+
+/* one-pole HPF coefficient a = exp(-2*pi*fc/sr); 5-term series so the
+   init path stays mul/add-only (ZDL-safe) */
+static float rev_hp_coeff(float sr) {
+    float x = -6.283185307f * 110.0f / sr;
+    return 1.0f + x * (1.0f + x * (0.5f + x * (0.1666667f + x * 0.04166667f)));
+}
 
 uint32_t Reverson_state_size(float sample_rate) {
     (void)sample_rate;   /* fixed-size state (ZDL-style caller memory) */
@@ -119,6 +129,9 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
         r->smooth_coef_b = 1.0f - t8;   /* (1-c)^8 via 3 multiplies (ZDL-safe) */
     }
     r->smooth_timer = 0u;
+    r->hp_a = rev_hp_coeff(sample_rate);
+    r->wet_hp_l = 0.0f; r->wet_hp_r = 0.0f;
+    r->wet_hp_x1_l = 0.0f; r->wet_hp_x1_r = 0.0f;
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->rev_mix = 0.0f;
@@ -170,6 +183,10 @@ void Reverson_reset(Reverson* r) {
     r->pd_counter = 0u;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
+    r->wet_hp_l = 0.0f;
+    r->wet_hp_r = 0.0f;
+    r->wet_hp_x1_l = 0.0f;
+    r->wet_hp_x1_r = 0.0f;
     r->wet_bl_l = 0.0f;
     r->wet_bl_r = 0.0f;
     rev_update_derived(r);
@@ -456,7 +473,7 @@ static void rev_smooth_params(Reverson* r) {
     r->cur.predelay  = rev_smooth(r->cur.predelay,  r->target.predelay,  c);
 }
 
-void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
+void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, float* out_r) {
     r->sample_count++;
     r->smooth_timer++;
     if (r->smooth_timer == 8u) {
@@ -465,6 +482,7 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
         rev_update_derived(r);
     }
     float c = r->smooth_coef;
+    float in = 0.5f * (in_l + in_r);   /* mono sum drives env/duck/wet */
     rev_env_process(&r->env, in);
 
     /* reverse swell envelope v2: rise -> (1+over) -> settle to 1 -> hold ->
@@ -558,6 +576,19 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     wet_l = r->wet_lp_l;
     wet_r = r->wet_lp_r;
 
+    /* fixed wet high-pass (~110 Hz): cuts palm-mute mud from the smear */
+    {
+        float a = r->hp_a;
+        float yl = a * (r->wet_hp_l + wet_l - r->wet_hp_x1_l);
+        r->wet_hp_x1_l = wet_l;
+        r->wet_hp_l = yl;
+        wet_l = yl;
+        float yr = a * (r->wet_hp_r + wet_r - r->wet_hp_x1_r);
+        r->wet_hp_x1_r = wet_r;
+        r->wet_hp_r = yr;
+        wet_r = yr;
+    }
+
     /* bass low-shelf: y = x + g*lp(x); g = (bass-0.5)*1.2 in [-0.6,+0.6], ~300 Hz */
     {
         float btc = 0.04f;
@@ -582,6 +613,10 @@ void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
     wet_r *= r->rev_env;
 
     float mix = r->cur.mix;
-    *out_l = in * (1.0f - mix) + wet_l * mix;
-    *out_r = in * (1.0f - mix) + wet_r * mix;
+    *out_l = in_l * (1.0f - mix) + wet_l * mix;
+    *out_r = in_r * (1.0f - mix) + wet_r * mix;
+}
+
+void Reverson_process(Reverson* r, float in, float* out_l, float* out_r) {
+    Reverson_process_stereo(r, in, in, out_l, out_r);
 }
