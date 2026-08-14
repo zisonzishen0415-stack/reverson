@@ -619,40 +619,13 @@ int main(void) {
     CHECK(Reverson_get_param(a, REVERSON_PARAM_GATE) > 0.899f);
     free(mem1); free(mem2);
 
-    /* --- predelay: the gate env must stay at the floor for pd samples ---- */
-    {
-        void* mem;
-        Reverson* r = new_core(&mem);
-        CHECK(r != NULL);
-        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
-        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
-        Reverson_set_param(r, REVERSON_PARAM_GATE, 1.0f);
-        Reverson_set_param(r, REVERSON_PARAM_REVLEN, 0.3f);
-        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.5f);
-        Reverson_set_param(r, REVERSON_PARAM_PREDELAY, 0.10f);  /* 4410 samples */
-        float l, rr;
-        for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr);
-        float floor_before = Reverson_test_env(r);
-        Reverson_process(r, 1.0f, &l, &rr);   /* onset */
-        int stayed = 1;
-        float env_after_onset = Reverson_test_env(r);
-        for (int i = 0; i < 4400; ++i) {
-            Reverson_process(r, 0.0f, &l, &rr);
-            if (Reverson_test_env(r) != floor_before) stayed = 0;
-        }
-        CHECK(stayed == 1);                    /* env held at floor during predelay */
-        for (int i = 0; i < 200; ++i) Reverson_process(r, 0.0f, &l, &rr);
-        CHECK(Reverson_test_env(r) > env_after_onset);  /* then it rises */
-        free(mem);
-    }
-
     if (fails == 0) { printf("test_trigger PASS\n"); return 0; }
     printf("test_trigger FAILED (%d)\n", fails);
     return 1;
 }
 ```
 
-Wait — the predelay test references `Reverson_test_env` and the 5-state env; those arrive in Tasks 6/7. To keep each task runnable, this file is created in Task 5 but registered + passing only after Task 7. Adjust: create the file + CMake registration in Task 5 (compile will fail on `Reverson_test_env` which Task 4 already declared/defined? Task 4 added the hook declaration — but its definition (`return r->rev_env;`) I planned to add with Task 6. To make Task 5 buildable, define the hook in Task 4 as `{ return r->rev_env; }` (rev_env exists in the old struct). Then in Task 5 the trigger tests that only need grid determinism run; the predelay block will FAIL (old code has no predelay) — so Task 5's failing state = predelay CHECK failures, which is the correct TDD red for Task 7. Hmm — cleaner: Task 5 file contains ONLY the grid tests (determinism + convergence); Task 7 appends the predelay block. Let me restructure: Task 5 creates test_trigger.c with the grid tests only; Task 7 appends the predelay block before its implementation.
+(Task 5's file contains only the grid tests; the predelay + sensitivity blocks are appended in Task 7, right before their implementation.)
 
 - [ ] **Step 2: Register** — in `CMakeLists.txt` add `reverson_add_test(test_trigger)` after `reverson_add_test(test_crossfeed)`.
 
