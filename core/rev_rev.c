@@ -19,6 +19,10 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
     r->cross_len = 1u;
     r->cross_inc = 1.0f;
     r->pre_off = 0u;
+    r->last_rv = 0.0f;
+    r->g_hold = 0.0f;
+    r->g_fade = 0.0f;
+    r->g_fade_inc = 1.0f / (0.012f * sample_rate);   /* ~12 ms retrigger crossfade */
     r->shape = 1;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
@@ -34,6 +38,9 @@ void rev_rev_clear(RevRev* r) {
     r->seg_peak = 0.0f;
     r->norm_gain = 1.0f;
     r->norm_target = 1.0f;
+    r->last_rv = 0.0f;
+    r->g_hold = 0.0f;
+    r->g_fade = 0.0f;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
         r->v_env[v] = 0.0f;
@@ -56,8 +63,19 @@ void rev_rev_set_preoff(RevRev* r, uint32_t samples) {
 
 /* Division here is control-rate (once per trigger), not per-sample. */
 void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int shape) {
+    /* retrigger ghost: mask the anchor jump. The OLD playback level is held
+       and fades to 0 over ~12 ms while the new segment's envelope rises
+       from 0, so re-anchoring mid-swell cannot step the output. */
+    r->g_hold = r->last_rv;
+    r->g_fade = 1.0f;
     if (seg_len < 2u) seg_len = 2u;
     if (seg_len > r->buf_len) seg_len = r->buf_len; /* oversized segment cannot alias the buffer */
+    /* live-overwrite guard: the write head keeps recording while the
+       anchored read head sweeps the frozen segment. With seg_len beyond
+       HALF the ring, live writes reach a not-yet-read position before the
+       read head does (p > buf_len/2: overwrite at t = buf_len-p < p) and
+       the playback picks up live junk = crackle. Clamp so it cannot happen. */
+    if (seg_len > r->buf_len / 2u - 2u) seg_len = r->buf_len / 2u - 2u;
     r->seg_len = seg_len;
     r->cross_len = cross_samples < 1u ? 1u : cross_samples;
     if (r->cross_len > r->seg_len) r->cross_len = r->seg_len;
@@ -117,6 +135,15 @@ void rev_rev_write(RevRev* r, float x) {
 }
 
 float rev_rev_process(RevRev* r) {
+    /* retrigger ghost: the previous output level fades out over ~12 ms while
+       the freshly re-anchored segment's envelope rises from 0 (the anchor
+       jump is masked -> no step/crackle at note onsets) */
+    float ghost = 0.0f;
+    if (r->g_fade > 0.0f) {
+        ghost = r->g_hold * r->g_fade;
+        r->g_fade -= r->g_fade_inc;
+        if (r->g_fade < 0.0f) r->g_fade = 0.0f;
+    }
     /* Read heads are anchored at trigger time (r->anchor = write_idx then), so
        live recording does not move them; at wrap each v_pos resets to 0 and the
        segment LOOPS the same anchored material until the next trigger
@@ -161,5 +188,7 @@ float rev_rev_process(RevRev* r) {
     }
 
     r->norm_gain += (r->norm_target - r->norm_gain) * r->norm_coef;
-    return sum * r->voice_scale * r->norm_gain;
+    float out = sum * r->voice_scale * r->norm_gain + ghost;
+    r->last_rv = out;
+    return out;
 }

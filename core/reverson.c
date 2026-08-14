@@ -145,7 +145,7 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->rev_mix = 0.0f;
-    r->rev_gain = 0.6f;
+    r->rev_gain = 0.35f;  /* headroom: the layer normalizes to ~0.9 peak */
     r->rev_seg_len = 2u;
     r->rev_cross = 1u;
     r->rev_preoff = 0u;
@@ -412,13 +412,15 @@ static void rev_update_derived(Reverson* r) {
         r->swell.diff_fb[1] = dfb * 0.9f;
         r->swell.diff_fb[2] = dfb * 0.8f;
     }
-    /* reverse-layer geometry: segment span follows revlen, capped inside the
-       shared 32768-sample buffer (span <= ~0.65 s @48k) */
+    /* reverse-layer geometry: segment span follows revlen. The span is
+       capped at HALF the shared ring (see rev_rev_trigger's overwrite
+       guard): live writes must never reach a not-yet-read frozen position,
+       so span <= buf/2 - 2 (~0.37 s @44k1). */
     float sr = r->sample_rate;
     float span_s = 0.10f + 0.55f * r->cur.revlen;           /* 0.10..0.65 s */
     uint32_t seg = (uint32_t)(int)(span_s * sr);
     if (seg < 2u) seg = 2u;
-    if (seg > REV_SWELL_BUF_LEN - 2u) seg = REV_SWELL_BUF_LEN - 2u;
+    if (seg > REV_SWELL_BUF_LEN / 2u - 2u) seg = REV_SWELL_BUF_LEN / 2u - 2u;
     r->rev_seg_len = seg;
     uint32_t cross = (uint32_t)(int)(0.03f * sr);
     if (cross > seg / 2u) cross = seg / 2u;
@@ -429,7 +431,7 @@ static void rev_update_derived(Reverson* r) {
     r->rev_voices = 1u + (uint32_t)(int)(2.0f * r->cur.density);  /* 1..3 */
     r->rev_rr_shape = 1 + (int)(3.0f * r->cur.shape);        /* 1..4 */
     if (r->rev_rr_shape > 4) r->rev_rr_shape = 4;
-    r->rev_gain = 0.6f;
+    r->rev_gain = 0.35f;  /* headroom: the layer normalizes to ~0.9 peak */
 }
 
 static void rev_fire_trigger(Reverson* r) {
@@ -454,7 +456,9 @@ static void rev_fire_trigger(Reverson* r) {
     uint32_t fall_n = hold >> 1u;
     if (fall_n < 2u) fall_n = 2u;
     r->rev_fall_inc = (target - rev_floor_of(r)) / (float)fall_n;
-    /* reverse layer: re-anchor the backwards read head at the fresh trigger */
+    /* re-anchor the backwards read head on every onset. The content jump is
+       masked by RevRev's retrigger ghost (old playback fades out over ~12 ms
+       while the new segment rises) - see rev_rev_trigger. */
     rev_rev_set_voices(&r->rev, r->rev_voices);
     rev_rev_set_preoff(&r->rev, r->rev_preoff);
     rev_rev_trigger(&r->rev, r->rev_seg_len, r->rev_cross, r->rev_rr_shape);
@@ -564,7 +568,9 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
 
     /* forward taps + reverse layer -> shared diffuser (the Rev continuum:
        at low gate the 13 taps own the sound, at high gate the reverse layer
-       takes over and the tap loop early-outs = CPU win) */
+       takes over and the tap loop early-outs = CPU win). The layer re-anchors
+       on every onset; RevRev's retrigger ghost fades the old playback out
+       (~12 ms) while the new segment rises, so the content jump is masked. */
     {
         float sw_l, sw_r;
         rev_swell_taps(&r->swell, wet_in, &sw_l, &sw_r);
@@ -607,7 +613,14 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
         wet_r += shelf_g * r->wet_bl_r;
     }
 
-    float drive = 1.0f + 3.0f * r->cur.sat;
+    /* reverse gate envelope BEFORE the saturator: the softclip is then the
+       true limiter, so the wet can never exceed +/-1 (no >0 dBFS output at
+       mix=1, no hard flat-tops when the env overshoots). */
+    wet_l *= r->rev_env;
+    wet_r *= r->rev_env;
+
+    /* gentle drive: 1.0..1.24 (was 1.0..1.9 - deep hard clipping at tone=1) */
+    float drive = 1.0f + 0.8f * r->cur.sat;
     wet_l = rev_softclip(wet_l * drive);
     wet_r = rev_softclip(wet_r * drive);
 
@@ -615,10 +628,6 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
     float side = (wet_l - wet_r) * 0.5f;
     wet_l = mid + side * r->cur.width;
     wet_r = mid - side * r->cur.width;
-
-    /* reverse gate on the reverb OUTPUT: the whole wet swells then cuts */
-    wet_l *= r->rev_env;
-    wet_r *= r->rev_env;
 
     float mix = r->cur.mix;
     *out_l = in_l * (1.0f - mix) + wet_l * mix;

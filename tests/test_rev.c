@@ -141,6 +141,30 @@ int main(void) {
     float po2 = rev_rev_process(&r);
     CLOSE(po2, 0.9f, 0.15f);
 
+    /* live-overwrite guard: the segment must fit in HALF the ring. The
+       write head keeps recording live input while the anchored read head
+       sweeps the frozen segment; with a segment longer than buf_len/2 the
+       live writes clobber the not-yet-read material (crackle). The engine
+       must clamp seg_len so this cannot happen. */
+    {
+        float mem2[1024];
+        RevRev r2;
+        rev_rev_init(&r2, mem2, 1024u, 44100.0f);
+        rev_rev_clear(&r2);
+        for (int i = 0; i < 600; ++i) rev_rev_write(&r2, (float)i);  /* frozen ramp 0..599 */
+        rev_rev_trigger(&r2, 700u, 10u, 1);   /* 700 > half (512): must clamp */
+        CHECK(r2.seg_len <= 510u);
+        /* and the clamped playback must keep reading the FROZEN ramp while
+           live writes continue (no clobber -> body values stay ramp-sized;
+           the seam crossfade may blend the live head, so allow that) */
+        for (int i = 0; i < 400; ++i) {
+            rev_rev_write(&r2, 1000.0f + (float)i);   /* live writes */
+            float v = rev_rev_process(&r2);
+            CHECK(is_finite_f(v));
+            CHECK(v > -300.0f && v < 300.0f);         /* normalized ramp, not raw live junk */
+        }
+    }
+
     if (fails == 0) { printf("test_rev PASS\n"); return 0; }
     printf("test_rev FAILED (%d)\n", fails);
     return 1;

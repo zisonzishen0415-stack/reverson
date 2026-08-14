@@ -87,6 +87,35 @@ int main(void) {
     }
     CHECK(peak < 1.2f);
 
+    /* (D) retrigger clicks: a mid-swell onset must NOT step the output.
+       The reverse layer re-anchors only while its gain is ~0 (at the gate
+       floor); mid-swell onsets re-plan the envelope (continuous) and leave
+       the read head alone. Measured as max per-sample |delta| in the wet. */
+    {
+        Reverson_reset(r);
+        configure(r);
+        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.8f);  /* long hold: mid-swell retriggers */
+        float prev = 0.0f, maxd = 0.0f;
+        /* sustained low note (content in the buffer), then two onsets close
+           together while the swell is up */
+        for (int i = 0; i < 8820; ++i) {
+            float x = 0.4f * (float)sin(2.0 * 3.14159265358979323846 * 110.0 * (double)i / 44100.0);
+            Reverson_process(r, x, &l, &rr);
+        }
+        for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.9f, &l, &rr);   /* onset 1 */
+        for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr); /* mid-swell */
+        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.9f, &l, &rr);   /* onset 2 (mid-swell) */
+        for (int i = 0; i < 22050; ++i) {
+            Reverson_process(r, 0.0f, &l, &rr);
+            float d = rev_absf(l - prev);
+            if (d > maxd) maxd = d;
+            prev = l;
+            CHECK(is_finite_f(l) && is_finite_f(rr));
+        }
+        CHECK(maxd < 0.05f);   /* no steps: the re-anchor was silent */
+    }
+
     free(mem);
     if (fails == 0) { printf("test_v2reverse PASS\n"); return 0; }
     printf("test_v2reverse FAILED (%d)\n", fails);
