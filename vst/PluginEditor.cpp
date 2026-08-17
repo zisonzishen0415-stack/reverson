@@ -303,15 +303,16 @@ private:
 /* ------------------------------------------------------------------ */
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
-/* Module pages: 3 knobs each. REV (Mix/Rev/Space), TONE (Tone/Grain/
- * Duck), MODE (Mode/Trig/Predelay) - mirrors the pedal page model. */
+/* Module pages: Mix is the RESIDENT rightmost knob (4th, like AmpNeve's
+ * INPUT); the three page knobs switch per module. REV (Rev/Space, K3
+ * slot empty), TONE (Tone/Grain/Duck), MODE (Mode/Trig/Predelay). */
 const char* ReversonAudioProcessorEditor::ids[3][3] = {
-    {"mix", "rev", "space"},
+    {"rev", "space", ""},
     {"tone", "grain", "duck"},
     {"mode", "trig", "predelay"}
 };
 const char* ReversonAudioProcessorEditor::names[3][3] = {
-    {"Mix", "Rev", "Space"},
+    {"Rev", "Space", ""},
     {"Tone", "Grain", "Duck"},
     {"Mode", "Trig", "Predelay"}
 };
@@ -359,6 +360,7 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
         addAndMakeVisible(pageTabs[i]);
     }
     bypassButton.setName("bypass");
+    bypassButton.setButtonText("BYPASS");
     addAndMakeVisible(bypassButton);
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         processor.apvts, "bypass", bypassButton);
@@ -386,6 +388,20 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
         };
         addAndMakeVisible(knobs[i]);
     }
+
+    /* resident Mix knob (rightmost, AmpNeve-style INPUT equivalent):
+       always visible on every page, double-click returns to default */
+    mixKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    mixKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    mixKnob.setRotaryParameters(juce::MathConstants<float>::pi * 0.75f,
+                                juce::MathConstants<float>::pi * 2.25f, true);
+    mixKnob.setScrollWheelEnabled(true);
+    mixKnob.setRange(0.0, 1.0, 0.001);
+    mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        processor.apvts, "mix", mixKnob);
+    if (auto* p = processor.apvts.getParameter("mix"))
+        mixKnob.setDoubleClickReturnValue(true, (double)p->getDefaultValue());
+    addAndMakeVisible(mixKnob);
 
     resizeConstrainer = std::make_unique<juce::ComponentBoundsConstrainer>();
     resizeConstrainer->setFixedAspectRatio(400.0 / 440.0);
@@ -417,7 +433,7 @@ juce::Rectangle<int> ReversonAudioProcessorEditor::slotRect(int slot) const {
 
 juce::Rectangle<int> ReversonAudioProcessorEditor::knobRect(int index) const {
     auto lcd = lcdRect();
-    /* knob column spans from below the LCD to above the button row;
+    /* four knob columns below the LCD: page knobs 0..2 + resident Mix 3;
      * always square so the rotary is a circle at any editor size. */
     int top = lcd.getBottom() + 12;
     int bottom = getHeight() - 34 - 30 - 8;
@@ -426,7 +442,7 @@ juce::Rectangle<int> ReversonAudioProcessorEditor::knobRect(int index) const {
     auto kArea = juce::Rectangle<int>(lcd.getX(), top, lcd.getWidth(), h);
     int w = kArea.getWidth() / 4;
     int side = (w < h) ? w : h;
-    int x = kArea.getX() + (index + 1) * w + (w - side) / 2;
+    int x = kArea.getX() + index * w + (w - side) / 2;
     int y = kArea.getY() + (h - side) / 2;
     return juce::Rectangle<int>(x, y, side, side);
 }
@@ -468,6 +484,8 @@ void ReversonAudioProcessorEditor::setPage(int page) {
 }
 
 void ReversonAudioProcessorEditor::setFocus(int slot) {
+    if (slot < 0 || slot >= 3) return;
+    if (ids[currentPage][slot][0] == '\0') return;   /* empty slot: no param */
     focusedSlot = slot;
     repaint();
 }
@@ -513,11 +531,15 @@ void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
     g.drawText(juce::String(moduleNames[currentPage]), pageArea,
                juce::Justification::centredRight, false);
 
-    /* focused param (middle): name + big value + bar */
+    /* focused param (middle): name + big value + bar. If the focused slot
+       is empty (REV page has only 2 knobs now that Mix is resident), fall
+       back to the first non-empty slot. */
     auto mid = screen.removeFromTop(88);
-    const char* focusName = names[currentPage][focusedSlot];
+    int focusIdx = focusedSlot;
+    if (ids[currentPage][focusIdx][0] == '\0') focusIdx = 0;
+    const char* focusName = names[currentPage][focusIdx];
     float focusVal = 0.0f;
-    if (auto* v = processor.apvts.getRawParameterValue(ids[currentPage][focusedSlot]))
+    if (auto* v = processor.apvts.getRawParameterValue(ids[currentPage][focusIdx]))
         focusVal = v->load();
 
     g.setColour(lcdDim);
@@ -529,7 +551,7 @@ void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
     {
         static const char* MODE_NAMES[6] = {"Off", "Wash", "Reverse", "Gated", "Shoegaze", "Space"};
         juce::String focusText;
-        if (juce::String(ids[currentPage][focusedSlot]) == "mode") {
+        if (juce::String(ids[currentPage][focusIdx]) == "mode") {
             int mi = (int)(focusVal * 5.0f + 0.5f);
             if (mi < 0) mi = 0;
             if (mi > 5) mi = 5;
@@ -548,12 +570,15 @@ void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
     g.setColour(accent);
     g.fillRect(bar.withWidth((int)(bar.getWidth() * focusVal)));
 
-    /* knob slots (bottom of screen) */
+    /* knob slots (bottom of screen); empty slots (REV page K3) render
+       as blank frames */
     for (int i = 0; i < 3; ++i) {
         auto r = slotRect(i);
         bool focused = (i == focusedSlot);
+        bool has = (ids[currentPage][i][0] != '\0');
         g.setColour(lcdDim);
         g.drawRect(r, 1);
+        if (!has) continue;   /* empty slot: frame only */
         g.setFont(juce::Font(juce::Font::getDefaultMonospacedFontName(), 11.0f,
                              focused ? juce::Font::bold : juce::Font::plain));
         g.drawText(juce::String("K") + juce::String(i + 1), r.removeFromTop(14),
@@ -589,12 +614,19 @@ void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
         g.drawText(sv, r, juce::Justification::centred, false);
     }
 
-    /* knob labels under the rotary row */
+    /* knob labels under the rotary row: 3 page knobs + resident MIX */
     for (int i = 0; i < 3; ++i) {
         auto kr = knobRect(i);
         g.setColour(textDim);
         g.setFont(juce::Font(10.0f, juce::Font::bold));
         g.drawText(names[currentPage][i], kr.getX() - 10, kr.getBottom() + 4,
+                   kr.getWidth() + 20, 12, juce::Justification::centred, false);
+    }
+    {
+        auto kr = knobRect(3);
+        g.setColour(text);
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawText("MIX", kr.getX() - 10, kr.getBottom() + 4,
                    kr.getWidth() + 20, 12, juce::Justification::centred, false);
     }
 }
@@ -603,6 +635,7 @@ void ReversonAudioProcessorEditor::resized() {
     auto lcd = lcdRect();
     for (int i = 0; i < 3; ++i)
         knobs[i].setBounds(knobRect(i));
+    mixKnob.setBounds(knobRect(3));   /* resident Mix, rightmost */
     auto area = getLocalBounds();
     auto btnRow = area.removeFromBottom(34);
     bypassButton.setBounds(16, btnRow.getY(), 108, 26);

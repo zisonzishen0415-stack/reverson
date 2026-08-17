@@ -8,11 +8,12 @@ class PresetStrip;
 /* Zoom MS-series style editor, AmpNeve-grade polish with a grass-green
    palette (the MS/G1 series LCDs are green backlit, so the LCD reads like
    the real pedal). LCD screen (effect name, focused param with big value
-   + bar, and the three knob slots K1/K2/K3) above three rotary knobs;
-   module tabs REV/TONE/MODE replace the PAGE button, a preset strip
-   (◀ name ▶ | SAVE DEL) and a BYPASS chip. All 9 params are laid out as
-   3 pages x 3 knobs, mirroring the pedal's page model
-   (P3 = Mode/Trig/Predelay). */
+   + bar, and the three knob slots K1/K2/K3) above FOUR rotary knobs:
+   Mix is the resident rightmost knob (like AmpNeve's resident INPUT),
+   the three module knobs switch per page. Module tabs REV/TONE/MODE,
+   a preset strip (◀ name ▶ | SAVE DEL) and a BYPASS chip (toggle with
+   LED, AmpNeve-style). Params: Mix resident; P1 Rev/Space, P2 Tone/
+   Grain/Duck, P3 Mode/Trig/Predelay (mirrors the pedal page model). */
 class ReversonAudioProcessorEditor : public juce::AudioProcessorEditor,
                                      private juce::Timer {
 public:
@@ -51,7 +52,7 @@ private:
 
     juce::Rectangle<int> lcdRect() const;
     juce::Rectangle<int> slotRect(int slot) const;
-    juce::Rectangle<int> knobRect(int index) const;
+    juce::Rectangle<int> knobRect(int index) const;   /* 0..2 page knobs, 3 = Mix */
 
     ReversonAudioProcessor& processor;
 
@@ -61,9 +62,11 @@ private:
     juce::Array<juce::File> userPresetFiles;
 
     juce::TextButton pageTabs[3];                 /* REV / TONE / MODE */
-    juce::TextButton bypassButton;
-    juce::Slider knobs[3];
+    juce::ToggleButton bypassButton;              /* AmpNeve-style BYPASS chip */
+    juce::Slider knobs[3];                        /* page knobs */
+    juce::Slider mixKnob;                         /* resident Mix (rightmost) */
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachments[3];
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
 
     int currentPage = 0;
