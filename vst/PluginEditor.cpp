@@ -304,31 +304,33 @@ private:
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
 /* Module pages: Mix is the RESIDENT rightmost knob (4th, like AmpNeve's
- * INPUT); the three page knobs switch per module. REV (Rev/Space, K3
- * slot empty), TONE (Tone/Grain/Duck), MODE (Mode/Trig/Predelay). */
+ * INPUT); the three page knobs switch per module. 8 page params over
+ * 3 pages: REV (Rev/Space/Trig), TONE (Tone/Grain/Duck), MODE
+ * (Mode/Predelay - K3 empty). */
 const char* ReversonAudioProcessorEditor::ids[3][3] = {
-    {"rev", "space", ""},
+    {"rev", "space", "trig"},
     {"tone", "grain", "duck"},
-    {"mode", "trig", "predelay"}
+    {"mode", "predelay", ""}
 };
 const char* ReversonAudioProcessorEditor::names[3][3] = {
-    {"Rev", "Space", ""},
+    {"Rev", "Space", "Trig"},
     {"Tone", "Grain", "Duck"},
-    {"Mode", "Trig", "Predelay"}
+    {"Mode", "Predelay", ""}
 };
 const char* ReversonAudioProcessorEditor::moduleNames[3] = { "REV", "TONE", "MODE" };
 
 /* Factory presets: {mix, rev, space, tone, grain, duck, trig, predelay,
  * mode}. The first three are the acceptance presets (same map6 curves as
- * the pedal + render tool); Wash/Gated drive the core mode tables with
- * level-friendly knobs. */
+ * the pedal + render tool). Wash/Gated mirror the modeKnobPresets and
+ * SET the mode label (0.2 / 0.6) so the LCD shows the character name -
+ * the mode param is a preset selector/label, never a live override. */
 const ReversonAudioProcessorEditor::FactoryPreset
 ReversonAudioProcessorEditor::factoryPresets[5] = {
     { "mbv",      { 0.60f, 0.85f, 0.55f, 0.50f, 0.60f, 0.10f, 0.35f, 0.10f, 0.0f } },
     { "diiv",     { 0.55f, 0.25f, 0.60f, 0.50f, 0.40f, 0.50f, 0.55f, 0.00f, 0.0f } },
     { "slowdive", { 0.70f, 0.35f, 0.85f, 0.45f, 0.55f, 0.30f, 0.70f, 0.00f, 0.0f } },
-    { "Wash",     { 0.60f, 0.60f, 0.75f, 0.45f, 0.55f, 0.35f, 0.35f, 0.05f, 0.0f } },
-    { "Gated",    { 0.65f, 0.95f, 0.35f, 0.50f, 0.40f, 0.20f, 0.40f, 0.00f, 0.0f } }
+    { "Wash",     { 0.60f, 0.60f, 0.75f, 0.45f, 0.55f, 0.35f, 0.35f, 0.05f, 0.2f } },
+    { "Gated",    { 0.65f, 0.95f, 0.35f, 0.50f, 0.40f, 0.20f, 0.40f, 0.00f, 0.6f } }
 };
 
 /* Mode 1..5 -> the knob positions that produce that character (the mode
@@ -715,10 +717,10 @@ void ReversonAudioProcessorEditor::applyModeToKnobs(int mode) {
     for (int i = 0; i < 8; ++i)
         if (auto* param = processor.apvts.getParameter(knobIds[i]))
             param->setValueNotifyingHost(v[i]);
-    /* return to manual: mode=0 (Off) so every knob stays editable; the
-       settings live only in this plugin instance until the user saves */
-    if (auto* param = processor.apvts.getParameter("mode"))
-        param->setValueNotifyingHost(0.0f);
+    /* the MODE param stays where the user left it - it is a preset
+       selector/label, NOT a live override (the processor never reads it
+       for audio), so the knob does not snap back and the LCD keeps
+       showing the character name while the knobs stay fully editable */
     repaint();
 }
 

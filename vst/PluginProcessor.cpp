@@ -54,34 +54,19 @@ void ReversonAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     auto* pDuck = apvts.getRawParameterValue("duck");
     auto* pTrig = apvts.getRawParameterValue("trig");
     auto* pPredelay = apvts.getRawParameterValue("predelay");
-    auto* pMode = apvts.getRawParameterValue("mode");
     auto* pBypass = apvts.getRawParameterValue("bypass");
 
     if (core == nullptr) { buffer.clear(); return; }
     if (*pBypass > 0.5f) return;  /* bypass: dry passthrough (VST3 processes in place) */
 
+    /* The AUDIO is driven entirely by the knobs. The mode parameter is a
+       PRESET LOADER, not a live character override: picking a mode moves
+       the knobs to that character's positions (UI side) and stays as a
+       label - the user then tweaks freely and nothing gets re-overridden
+       every block (this was the "mode snaps back / knobs dead" mess). */
     Reverson_set_6knob(core, *pMix, *pRev, *pSpace, *pTone, *pGrain, *pDuck);
     Reverson_set_param(core, REVERSON_PARAM_TRIG, *pTrig);
     Reverson_set_param(core, REVERSON_PARAM_PREDELAY, *pPredelay);
-    {
-        int mode = (int)(*pMode * 5.0f + 0.5f);   /* 0 = custom knobs */
-        if (mode >= 1) {
-            ReversonParams mp;
-            Reverson_mode(mode, &mp);   /* mode owns the 11 character params;
-                                           mix/duck stay with the user knobs */
-            Reverson_set_param(core, REVERSON_PARAM_DECAY, mp.decay);
-            Reverson_set_param(core, REVERSON_PARAM_TONE, mp.tone);
-            Reverson_set_param(core, REVERSON_PARAM_REVLEN, mp.revlen);
-            Reverson_set_param(core, REVERSON_PARAM_GATE, mp.gate);
-            Reverson_set_param(core, REVERSON_PARAM_SHAPE, mp.shape);
-            Reverson_set_param(core, REVERSON_PARAM_MOD, mp.mod);
-            Reverson_set_param(core, REVERSON_PARAM_SAT, mp.sat);
-            Reverson_set_param(core, REVERSON_PARAM_WIDTH, mp.width);
-            Reverson_set_param(core, REVERSON_PARAM_DENSITY, mp.density);
-            Reverson_set_param(core, REVERSON_PARAM_BASS, mp.bass);
-            Reverson_set_param(core, REVERSON_PARAM_DIFFUSION, mp.diffusion);
-        }
-    }
 
     const int numSamples = buffer.getNumSamples();
     /* stereo-in: the mono sum drives the wet engine, the dry image is kept */
