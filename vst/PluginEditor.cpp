@@ -146,6 +146,30 @@ public:
             if (on) { g.setColour(accentSoft); g.fillEllipse(led.expanded(2.0f)); }
             g.setColour(on ? accent : ledOff);
             g.fillEllipse(led);
+        } else if (tag == "icon-left" || tag == "icon-right") {
+            auto c = r.getCentre();
+            float s = 4.5f;
+            juce::Path p;
+            if (tag == "icon-left")
+                p.addTriangle(c.x + s * 0.5f, c.y - s, c.x + s * 0.5f, c.y + s, c.x - s, c.y);
+            else
+                p.addTriangle(c.x - s * 0.5f, c.y - s, c.x - s * 0.5f, c.y + s, c.x + s, c.y);
+            g.setColour(en ? (hot ? text : textDim) : textDim.withAlpha(0.4f));
+            g.fillPath(p);
+        } else if (tag == "icon-save") {
+            auto f = r.reduced(7.0f, 6.0f);
+            g.setColour(en ? (hot ? text : textDim) : textDim.withAlpha(0.4f));
+            g.fillRoundedRectangle(f, 2.0f);
+            g.setColour(panel);
+            g.fillRect(f.removeFromTop(f.getHeight() * 0.28f).reduced(3.0f, 1.0f));
+            g.setColour(panel);
+            g.fillRect(f.removeFromLeft(f.getWidth() * 0.38f).reduced(1.0f, 2.0f));
+        } else if (tag == "icon-del") {
+            auto c = r.getCentre();
+            float s = 5.0f;
+            g.setColour(en ? (hot ? text : textDim) : textDim.withAlpha(0.4f));
+            g.drawLine(c.x - s, c.y - s, c.x + s, c.y + s, 1.8f);
+            g.drawLine(c.x - s, c.y + s, c.x + s, c.y - s, 1.8f);
         }
     }
 
@@ -202,6 +226,81 @@ public:
 };
 
 /* ------------------------------------------------------------------ */
+/* Preset strip: ◀ name ▶ | SAVE DEL. Pure UI; all actions go through  */
+/* callbacks wired by the editor.                                      */
+/* ------------------------------------------------------------------ */
+class PresetStrip : public juce::Component {
+public:
+    PresetStrip() {
+        for (auto* b : { &leftBtn, &rightBtn, &nameBtn, &saveBtn, &delBtn })
+            addAndMakeVisible(b);
+        leftBtn.setButtonText("");   leftBtn.setName("icon-left");
+        rightBtn.setButtonText("");  rightBtn.setName("icon-right");
+        saveBtn.setButtonText("");   saveBtn.setName("icon-save");
+        delBtn.setButtonText("");    delBtn.setName("icon-del");
+        leftBtn.onClick = [this] { if (onCycle) onCycle(-1); };
+        rightBtn.onClick = [this] { if (onCycle) onCycle(1); };
+        nameBtn.onClick = [this] { showPopup(); };
+        saveBtn.onClick = [this] { if (onSave) onSave(); };
+        delBtn.onClick = [this] { if (onDelete) onDelete(); };
+    }
+
+    std::function<void(int)> onCycle;   /* dir ±1 */
+    std::function<void(int)> onFactory; /* factory index 0..4 */
+    std::function<void(int)> onUser;    /* index into user list */
+    std::function<void()> onSave;
+    std::function<void()> onDelete;
+
+    void setLists(const juce::StringArray& factoryNames, const juce::StringArray& userNamesIn) {
+        factoryNamesList = factoryNames;
+        userNames = userNamesIn;
+    }
+
+    void setCurrent(const juce::String& name, int selectedId) {
+        currentId = selectedId;
+        nameBtn.setButtonText(name.isEmpty() ? "PRESET" : name);
+        delBtn.setEnabled(selectedId >= 100);
+    }
+
+    juce::String currentName() const { return nameBtn.getButtonText(); }
+    int currentIdForSave() const { return currentId; }
+
+    void resized() override {
+        auto r = getLocalBounds();
+        auto h = r.getHeight();
+        leftBtn.setBounds(r.removeFromLeft(h));
+        rightBtn.setBounds(r.removeFromRight(h));
+        auto icons = r.removeFromRight(2 * h);
+        delBtn.setBounds(icons.removeFromRight(h));
+        saveBtn.setBounds(icons);
+        nameBtn.setBounds(r);
+    }
+
+private:
+    void showPopup() {
+        juce::PopupMenu menu;
+        for (int i = 0; i < factoryNamesList.size(); ++i)
+            menu.addItem(1 + i, factoryNamesList[i], true, currentId == 1 + i);
+        menu.addSeparator();
+        if (userNames.isEmpty())
+            menu.addItem(-1, "(no custom presets)", false);
+        else
+            for (int i = 0; i < userNames.size(); ++i)
+                menu.addItem(100 + i, userNames[i], true, currentId == 100 + i);
+        menu.setLookAndFeel(&getLookAndFeel());
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(nameBtn),
+                           [this](int result) {
+                               if (result >= 1 && result <= 5 && onFactory) onFactory(result - 1);
+                               else if (result >= 100 && onUser) onUser(result - 100);
+                           });
+    }
+
+    juce::TextButton leftBtn, rightBtn, nameBtn, saveBtn, delBtn;
+    juce::StringArray factoryNamesList, userNames;
+    int currentId = 0;
+};
+
+/* ------------------------------------------------------------------ */
 /* Editor                                                              */
 /* ------------------------------------------------------------------ */
 /* Module pages: 3 knobs each. REV (Mix/Rev/Space), TONE (Tone/Grain/
@@ -217,6 +316,19 @@ const char* ReversonAudioProcessorEditor::names[3][3] = {
     {"Mode", "Trig", "Predelay"}
 };
 const char* ReversonAudioProcessorEditor::moduleNames[3] = { "REV", "TONE", "MODE" };
+
+/* Factory presets: {mix, rev, space, tone, grain, duck, trig, predelay,
+ * mode}. The first three are the acceptance presets (same map6 curves as
+ * the pedal + render tool); Wash/Gated drive the core mode tables with
+ * level-friendly knobs. */
+const ReversonAudioProcessorEditor::FactoryPreset
+ReversonAudioProcessorEditor::factoryPresets[5] = {
+    { "mbv",      { 0.60f, 0.85f, 0.55f, 0.50f, 0.60f, 0.10f, 0.35f, 0.10f, 0.0f } },
+    { "diiv",     { 0.55f, 0.25f, 0.60f, 0.50f, 0.40f, 0.50f, 0.55f, 0.00f, 0.0f } },
+    { "slowdive", { 0.70f, 0.35f, 0.85f, 0.45f, 0.55f, 0.30f, 0.70f, 0.00f, 0.0f } },
+    { "Wash",     { 0.60f, 0.80f, 0.55f, 0.50f, 0.60f, 0.30f, 0.35f, 0.10f, 0.2f } },
+    { "Gated",    { 0.70f, 0.95f, 0.45f, 0.50f, 0.50f, 0.10f, 0.35f, 0.00f, 0.6f } }
+};
 
 ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p) {
@@ -237,6 +349,17 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         processor.apvts, "bypass", bypassButton);
 
+    /* preset strip */
+    presetStrip = std::make_unique<PresetStrip>();
+    presetStrip->onCycle = [this](int dir) { cyclePreset(dir); };
+    presetStrip->onFactory = [this](int idx) { applyFactoryPreset(idx); };
+    presetStrip->onUser = [this](int idx) {
+        if (idx < userPresetFiles.size()) loadUserPreset(userPresetFiles[idx]);
+    };
+    presetStrip->onSave = [this] { saveUserPreset(); };
+    presetStrip->onDelete = [this] { deleteUserPreset(); };
+    addAndMakeVisible(presetStrip.get());
+
     /* knobs */
     for (int i = 0; i < 3; ++i) {
         knobs[i].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -251,12 +374,13 @@ ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcesso
     }
 
     resizeConstrainer = std::make_unique<juce::ComponentBoundsConstrainer>();
-    resizeConstrainer->setFixedAspectRatio(400.0 / 420.0);
+    resizeConstrainer->setFixedAspectRatio(400.0 / 440.0);
     setConstrainer(resizeConstrainer.get());
-    setResizeLimits(340, 357, 640, 672);
+    setResizeLimits(340, 374, 640, 704);
     setResizable(true, false);
     setPage(0);
-    setSize(400, 420);
+    refreshPresetList();
+    setSize(400, 440);
     startTimerHz(30);   /* keep LCD values live while knobs move */
 }
 
@@ -324,6 +448,17 @@ void ReversonAudioProcessorEditor::mouseDown(const juce::MouseEvent& e) {
         if (slotRect(i).contains(e.getPosition())) { setFocus(i); return; }
     }
     if (pageHitRect.contains(e.getPosition())) { setPage((currentPage + 1) % 3); return; }
+}
+
+bool ReversonAudioProcessorEditor::keyPressed(const juce::KeyPress& k) {
+    if (k == juce::KeyPress::leftKey)  { cyclePreset(-1); return true; }
+    if (k == juce::KeyPress::rightKey) { cyclePreset(1);  return true; }
+    if (k == juce::KeyPress::spaceKey) {
+        if (auto* param = processor.apvts.getParameter("bypass"))
+            param->setValueNotifyingHost(param->getValue() < 0.5f ? 1.0f : 0.0f);
+        return true;
+    }
+    return false;
 }
 
 void ReversonAudioProcessorEditor::paint(juce::Graphics& g) {
@@ -446,8 +581,110 @@ void ReversonAudioProcessorEditor::resized() {
     int x = btnRow.getRight() - 16 - 3 * tabW;
     for (int i = 0; i < 3; ++i)
         pageTabs[i].setBounds(x + i * tabW, btnRow.getY(), tabW - 4, 26);
+    auto presetRow = area.removeFromBottom(32);
+    presetStrip->setBounds(presetRow.getX() + 16, presetRow.getY() + 1,
+                           presetRow.getWidth() - 32, 26);
 }
 
 void ReversonAudioProcessorEditor::timerCallback() {
+    repaint();
+}
+
+/* ------------------------------------------------------------------ */
+/* Preset management (factory + user XML presets in app-data)          */
+/* ------------------------------------------------------------------ */
+static const char* presetParamIds[9] = {
+    "mix", "rev", "space", "tone", "grain", "duck",
+    "trig", "predelay", "mode"
+};
+
+juce::File ReversonAudioProcessorEditor::presetDir() const {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Reverson").getChildFile("Presets");
+}
+
+void ReversonAudioProcessorEditor::refreshPresetList() {
+    juce::StringArray factoryNames;
+    for (int i = 0; i < 5; ++i) factoryNames.add(factoryPresets[i].name);
+    userPresetFiles.clear();
+    auto dir = presetDir();
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.xml");
+    files.sort();
+    juce::StringArray userNames;
+    for (int i = 0; i < files.size(); ++i) {
+        userPresetFiles.add(files[i]);
+        userNames.add(files[i].getFileNameWithoutExtension());
+    }
+    presetStrip->setLists(factoryNames, userNames);
+    presetStrip->setCurrent("", 0);
+}
+
+void ReversonAudioProcessorEditor::applyFactoryPreset(int index) {
+    if (index < 0 || index >= 5) return;
+    const FactoryPreset& p = factoryPresets[index];
+    for (int i = 0; i < 9; ++i)
+        if (auto* param = processor.apvts.getParameter(presetParamIds[i]))
+            param->setValueNotifyingHost(p.v[i]);
+    if (auto* param = processor.apvts.getParameter("bypass"))
+        param->setValueNotifyingHost(0.0f);
+    presetStrip->setCurrent(factoryPresets[index].name, index + 1);
+    repaint();
+}
+
+void ReversonAudioProcessorEditor::cyclePreset(int dir) {
+    juce::StringArray all;
+    for (int i = 0; i < 5; ++i) all.add(factoryPresets[i].name);
+    for (auto& f : userPresetFiles) all.add(f.getFileNameWithoutExtension());
+    if (all.isEmpty()) return;
+    int idx = all.indexOf(presetStrip->currentName());
+    if (idx < 0) idx = 0;
+    idx = (idx + dir + all.size()) % all.size();
+    if (idx < 5) applyFactoryPreset(idx);
+    else loadUserPreset(userPresetFiles[idx - 5]);
+}
+
+void ReversonAudioProcessorEditor::saveUserPreset() {
+    auto dir = presetDir();
+    if (!dir.isDirectory() && !dir.createDirectory()) return;
+    juce::File target;
+    int sel = presetStrip->currentIdForSave();   /* 0 = none, 100+ = custom slot */
+    if (sel >= 100 && sel - 100 < userPresetFiles.size())
+        target = userPresetFiles[sel - 100];               /* overwrite selected */
+    else {
+        int n = 1;
+        while (dir.getChildFile(juce::String("Custom ") + juce::String(n) + ".xml").exists())
+            ++n;
+        target = dir.getChildFile(juce::String("Custom ") + juce::String(n) + ".xml");
+    }
+    auto state = processor.apvts.copyState();
+    /* drop bypass from the stored state so presets always load un-bypassed */
+    for (int i = state.getNumChildren() - 1; i >= 0; --i)
+        if (state.getChild(i).getProperty("id").toString() == "bypass")
+            state.removeChild(i, nullptr);
+    state.setProperty("presetName", target.getFileNameWithoutExtension(), nullptr);
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    xml->writeTo(target);
+    refreshPresetList();
+    int idx = userPresetFiles.indexOf(target);
+    if (idx >= 0)
+        presetStrip->setCurrent(target.getFileNameWithoutExtension(), 100 + idx);
+}
+
+void ReversonAudioProcessorEditor::deleteUserPreset() {
+    int sel = presetStrip->currentIdForSave();
+    if (sel < 100 || sel - 100 >= userPresetFiles.size()) return;
+    userPresetFiles[sel - 100].deleteFile();
+    refreshPresetList();
+    presetStrip->setCurrent(factoryPresets[1].name, 2);   /* show the default */
+}
+
+void ReversonAudioProcessorEditor::loadUserPreset(const juce::File& file) {
+    std::unique_ptr<juce::XmlElement> xml(juce::XmlDocument::parse(file));
+    if (xml == nullptr || !xml->hasTagName(processor.apvts.state.getType())) return;
+    processor.apvts.replaceState(juce::ValueTree::fromXml(*xml));
+    if (auto* param = processor.apvts.getParameter("bypass"))
+        param->setValueNotifyingHost(0.0f);
+    int idx = userPresetFiles.indexOf(file);
+    presetStrip->setCurrent(file.getFileNameWithoutExtension(), idx >= 0 ? 100 + idx : 0);
     repaint();
 }
