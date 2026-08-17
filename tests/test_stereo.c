@@ -22,16 +22,28 @@ int main(void) {
     CHECK(r != NULL);
 
     /* mix=0: the dry stereo image passes through bit-exactly (after the
-       8-sample param grid has converged mix to exactly 0) */
+       8-sample param grid has converged mix to exactly 0). The output
+       limiter's lookahead delays the path by REV_LOOK_LEN samples, so
+       compare against the delayed input. */
     Reverson_set_param(r, REVERSON_PARAM_MIX, 0.0f);
     float ol, orr;
     for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &ol, &orr);
-    for (int i = 0; i < 1000; ++i) {
-        float xl = (float)((i * 13) % 17) / 17.0f - 0.5f;
-        float xr = (float)((i * 7) % 19) / 19.0f - 0.5f;
-        Reverson_process_stereo(r, xl, xr, &ol, &orr);
-        CHECK(ol == xl);
-        CHECK(orr == xr);
+    {
+        enum { DL = 64 };
+        static float hl[DL], hr[DL];
+        for (int i = 0; i < 1000; ++i) {
+            float xl = (float)((i * 13) % 17) / 17.0f - 0.5f;
+            float xr = (float)((i * 7) % 19) / 19.0f - 0.5f;
+            Reverson_process_stereo(r, xl, xr, &ol, &orr);
+            if (i >= DL) {
+                CHECK(ol == hl[i % DL]);
+                CHECK(orr == hr[i % DL]);
+            } else {
+                CHECK(ol == 0.0f && orr == 0.0f);   /* lookahead prefill */
+            }
+            hl[i % DL] = xl;
+            hr[i % DL] = xr;
+        }
     }
 
     /* L==R input: the mono wrapper is bit-identical to the stereo entry.

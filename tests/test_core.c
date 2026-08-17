@@ -290,13 +290,23 @@ int main(void) {
         Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
         Reverson_set_bed(r, 0.0f);
         for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr); /* converge */
-        int dry_ok = 1;
-        for (int i = 0; i < 1000; ++i) {
-            float x = (float)((i * 37) % 101) / 101.0f - 0.5f;
-            Reverson_process(r, x, &l, &rr);
-            if (l != x || rr != x) dry_ok = 0;
+        {
+            /* the limiter lookahead delays the path by REV_LOOK_LEN samples */
+            enum { DL = 64 };
+            static float hx[DL];
+            int dry_ok = 1;
+            for (int i = 0; i < 1000; ++i) {
+                float x = (float)((i * 37) % 101) / 101.0f - 0.5f;
+                Reverson_process(r, x, &l, &rr);
+                if (i >= DL) {
+                    if (l != hx[i % DL] || rr != hx[i % DL]) dry_ok = 0;
+                } else {
+                    if (l != 0.0f || rr != 0.0f) dry_ok = 0;   /* prefill */
+                }
+                hx[i % DL] = x;
+            }
+            CHECK(dry_ok == 1);
         }
-        CHECK(dry_ok == 1);
     }
 
     /* sample-rate portability: 48 kHz stays finite and bounded with the
@@ -351,7 +361,7 @@ int main(void) {
             if (rev_absf(l) > pk) pk = rev_absf(l);
             if (rev_absf(rr) > pk) pk = rev_absf(rr);
         }
-        CHECK(pk < 2.5f);         /* full-scale: finite and bounded (leak) */
+        CHECK(pk < 0.96f);         /* full-scale: the lookahead limiter holds even the first crest sample */
     }
 
     free(mem);

@@ -10,6 +10,11 @@
 #define REV_FDN_TOTAL_SAMPLES 61440u   /* 2048+4096+8192+16384 x2 (L/R sets) */
 #endif
 
+/* Output limiter lookahead: the dry+wet mix is delayed this many samples
+   so the limiter gain (computed from the incoming peak) can ramp BEFORE a
+   crest reaches the output - zero attack leakage. 64 ~ 1.45 ms @44k1. */
+#define REV_LOOK_LEN 64u
+
 struct Reverson {
     float sample_rate;
     ReversonParams target;
@@ -55,11 +60,20 @@ struct Reverson {
     uint32_t pd_counter;        /* pending predelay countdown (0 = none) */
     uint32_t rev_last_trigger;
     uint32_t sample_count;
-    /* output safety limiter (gain-based, not wave-shaping): keeps the
-       dry+wet mix from exceeding 0.95 without flat-top distortion */
+    /* output safety limiter with LOOKAHEAD (gain-based, ZDL-safe Newton
+       reciprocal): the mix is delayed REV_LOOK_LEN samples in a small ring;
+       the gain is computed from the INCOMING (future) peak and applied to
+       the delayed sample, so a crest is fully caught before it exits -
+       zero leakage, no clicks, no flat-tops. */
     float out_gain_sm;
     float lim_attack_coef;
     float lim_release_coef;
+    float look_l[REV_LOOK_LEN];
+    float look_r[REV_LOOK_LEN];
+    float look_peak[REV_LOOK_LEN];   /* per-sample peak ring for the window max */
+    uint32_t look_q[REV_LOOK_LEN];   /* monotonic deque of candidate indices */
+    uint32_t look_qh, look_qt;       /* deque head/tail */
+    uint32_t look_i;
 };
 
 static void rev_update_derived(Reverson* r);
@@ -170,8 +184,15 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->rev_last_trigger = 0u;
     r->sample_count = 0u;
     r->out_gain_sm = 1.0f;
-    r->lim_attack_coef = rev_coeff_from_tc(0.001f * sample_rate);   /* ~1 ms */
+    r->lim_attack_coef = rev_coeff_from_tc(0.00025f * sample_rate); /* ~0.25 ms TC: full ramp inside the lookahead */
     r->lim_release_coef = rev_coeff_from_tc(0.100f * sample_rate);  /* ~100 ms */
+    rev_zero32((uint32_t*)r->look_l, REV_LOOK_LEN);
+    rev_zero32((uint32_t*)r->look_r, REV_LOOK_LEN);
+    rev_zero32((uint32_t*)r->look_peak, REV_LOOK_LEN);
+    rev_zero32((uint32_t*)r->look_q, REV_LOOK_LEN);
+    r->look_qh = 0u;
+    r->look_qt = 0u;
+    r->look_i = 0u;
     Reverson_reset(r);
     rev_update_derived(r);
     return r;
@@ -200,6 +221,13 @@ void Reverson_reset(Reverson* r) {
     r->hold_add = 0.0f;
     r->pd_counter = 0u;
     r->out_gain_sm = 1.0f;
+    rev_zero32((uint32_t*)r->look_l, REV_LOOK_LEN);
+    rev_zero32((uint32_t*)r->look_r, REV_LOOK_LEN);
+    rev_zero32((uint32_t*)r->look_peak, REV_LOOK_LEN);
+    rev_zero32((uint32_t*)r->look_q, REV_LOOK_LEN);
+    r->look_qh = 0u;
+    r->look_qt = 0u;
+    r->look_i = 0u;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
     r->wet_hp_l = 0.0f;
@@ -654,21 +682,59 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
     float ol = in_l * (1.0f - mix) + wet_l * mix;
     float orr = in_r * (1.0f - mix) + wet_r * mix;
 
-    /* output safety limiter (gain-based, ZDL-safe reciprocal): catches
-       dry+wet crests above 0.95. Smoothed attack (~1 ms) and release
-       (~100 ms) so the gain never steps (no clicks); a crest leaks at most
-       the first sample, which only matters in the saturation corner. */
+    /* output safety limiter with LOOKAHEAD (gain-based, ZDL-safe Newton
+       reciprocal): the mix is delayed REV_LOOK_LEN samples; the gain is
+       computed from the SLIDING WINDOW MAX over the lookahead window
+       (monotonic deque, amortized O(1)) - while ANY sample in the window is
+       hot, the gain cannot rise, so a crest's tail cannot leak after its
+       peak passes. The window ALSO includes the peak of the sample being
+       output right now (REV_LOOK_LEN samples old): its deque entry expires
+       exactly at its output step, so without this the very sample that needs
+       the limiting would be the one excluded. Output <= ~0.95 always, zero
+       leakage, no clicks, no flat-tops. */
     {
         const float limit = 0.95f;
+        uint32_t w = r->look_i & (REV_LOOK_LEN - 1u);
+        /* peak of the sample being output NOW (read before the slot is
+           overwritten - it must be inside the window at its own exit step) */
+        float dpk = rev_absf(r->look_l[w]);
+        float dpk2 = rev_absf(r->look_r[w]);
+        if (dpk2 > dpk) dpk = dpk2;
+        /* expire: any deque entry whose slot == w was written REV_LOOK_LEN
+           samples ago (it is the value being output this step). Pop it
+           BEFORE look_peak[w] is rewritten, so the monotonicity comparisons
+           below never read the corrupted value. */
+        while (r->look_qh != r->look_qt && r->look_q[r->look_qh] == w) {
+            r->look_qh = (r->look_qh + 1u) & (REV_LOOK_LEN - 1u);
+        }
         float pk = rev_absf(ol);
         float pk2 = rev_absf(orr);
         if (pk2 > pk) pk = pk2;
+        r->look_peak[w] = pk;
+        /* maintain monotonicity: drop dominated candidates from the back */
+        while (r->look_qt != r->look_qh
+               && r->look_peak[r->look_q[(r->look_qt - 1u) & (REV_LOOK_LEN - 1u)]] <= pk) {
+            r->look_qt = (r->look_qt - 1u) & (REV_LOOK_LEN - 1u);
+        }
+        r->look_q[r->look_qt] = w;
+        r->look_qt = (r->look_qt + 1u) & (REV_LOOK_LEN - 1u);
+        /* window max: newest candidate at the front (deque never empty here:
+           w was just pushed) OR the delayed sample's own peak, whichever is
+           larger - the gain can never exceed what THIS output sample needs */
+        float win_max = r->look_peak[r->look_q[r->look_qh]];
+        if (dpk > win_max) win_max = dpk;
         float g = 1.0f;
-        if (pk > limit) g = limit * rev_recip(pk);
+        if (win_max > limit) g = limit * rev_recip(win_max);
         float c = (g < r->out_gain_sm) ? r->lim_attack_coef : r->lim_release_coef;
         r->out_gain_sm += (g - r->out_gain_sm) * c;
-        *out_l = ol * r->out_gain_sm;
-        *out_r = orr * r->out_gain_sm;
+        /* delayed read (REV_LOOK_LEN samples old), then write the new mix */
+        float dl = r->look_l[w];
+        float dr = r->look_r[w];
+        r->look_l[w] = ol;
+        r->look_r[w] = orr;
+        r->look_i++;
+        *out_l = dl * r->out_gain_sm;
+        *out_r = dr * r->out_gain_sm;
     }
 }
 

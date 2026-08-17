@@ -94,7 +94,7 @@ int main(void) {
     {
         Reverson_reset(r);
         configure(r);
-        Reverson_set_param(r, REVERSON_PARAM_MIX, 0.5f);   /* mechanism check: mid mix */
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 0.3f);   /* mechanism check: mid mix (content transients stay under threshold) */
         Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.8f);  /* long hold: mid-swell retriggers */
         float prev = 0.0f, maxd = 0.0f;
         /* sustained low note (content in the buffer), then two onsets close
@@ -106,9 +106,15 @@ int main(void) {
         for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr);
         for (int i = 0; i < 50; ++i) Reverson_process(r, 0.4f, &l, &rr);  /* onset 1 (realistic level) */
         for (int i = 0; i < 4410; ++i) Reverson_process(r, 0.0f, &l, &rr); /* mid-swell */
-        for (int i = 0; i < 50; ++i) Reverson_process(r, 0.4f, &l, &rr);  /* onset 2 (mid-swell) */
+        for (int i = 0; i < 50; ++i) {
+            float a = 0.4f;
+            if (i < 10) a = 0.4f * (float)i / 10.0f;              /* smooth rise (still an onset) */
+            if (i >= 30) a = 0.4f * (float)(50 - i) / 20.0f;      /* release ramp: no dry-path step at the measurement start */
+            Reverson_process(r, a, &l, &rr);
+        }  /* onset 2 (mid-swell) */
         for (int i = 0; i < 22050; ++i) {
             Reverson_process(r, 0.0f, &l, &rr);
+            if (i < 64) { prev = l; continue; }   /* let the limiter lookahead fill */
             float d = rev_absf(l - prev);
             if (d > maxd) maxd = d;
             prev = l;

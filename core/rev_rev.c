@@ -63,11 +63,13 @@ void rev_rev_set_preoff(RevRev* r, uint32_t samples) {
 
 /* Division here is control-rate (once per trigger), not per-sample. */
 void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int shape) {
-    /* retrigger ghost: mask the anchor jump. The OLD playback level is held
-       and fades to 0 over ~12 ms while the new segment's envelope rises
-       from 0, so re-anchoring mid-swell cannot step the output. */
+    /* retrigger ghost: mask the anchor jump. Only armed on a MID-SWELL
+       retrigger (fresh trigger: nothing playing, nothing to mask); the OLD
+       output level is held and the new segment crossfades in over ~12 ms,
+       so re-anchoring mid-swell cannot step the output. */
+    int fresh = (r->v_env[0] == 0.0f && r->v_cross[0] == 0.0f);
     r->g_hold = r->last_rv;
-    r->g_fade = 1.0f;
+    r->g_fade = fresh ? 0.0f : 1.0f;
     if (seg_len < 2u) seg_len = 2u;
     if (seg_len > r->buf_len) seg_len = r->buf_len; /* oversized segment cannot alias the buffer */
     /* live-overwrite guard: the write head keeps recording while the
@@ -101,8 +103,9 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     r->anchor = r->write_idx;
     uint32_t body = r->seg_len - r->cross_len;
     /* smooth retrigger: keep the envelope if a swell is already playing so a
-       new onset re-anchors without a hard level reset (kills the wobble) */
-    int fresh = (r->v_env[0] == 0.0f && r->v_cross[0] == 0.0f);
+       new onset re-anchors without a hard level reset (kills the wobble);
+       the anchor content jump is masked by the retrigger ghost (armed above
+       only when NOT fresh) */
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         if (v < r->n_voices) {
             /* stagger via float math (v*seg_len < 2^24: exact in float32; the
@@ -139,12 +142,13 @@ void rev_rev_write(RevRev* r, float x) {
 }
 
 float rev_rev_process(RevRev* r) {
-    /* retrigger ghost: the previous output level fades out over ~12 ms while
-       the freshly re-anchored segment's envelope rises from 0 (the anchor
-       jump is masked -> no step/crackle at note onsets) */
-    float ghost = 0.0f;
+    /* retrigger ghost: the previous output level is HELD and crossfaded into
+       the freshly re-anchored segment over ~12 ms (true crossfade: at the
+       retrigger sample the output IS the held old level, so the anchor jump
+       cannot step the output; the new content takes over smoothly) */
+    float gf = 0.0f;
     if (r->g_fade > 0.0f) {
-        ghost = r->g_hold * r->g_fade;
+        gf = r->g_fade;
         r->g_fade -= r->g_fade_inc;
         if (r->g_fade < 0.0f) r->g_fade = 0.0f;
     }
@@ -192,7 +196,12 @@ float rev_rev_process(RevRev* r) {
     }
 
     r->norm_gain += (r->norm_target - r->norm_gain) * r->norm_coef;
-    float out = sum * r->voice_scale * r->norm_gain + ghost;
+    float out = sum * r->voice_scale * r->norm_gain;
+    /* true crossfade with the held old level: at the retrigger sample (gf=1)
+       the output IS the old level (continuous), then the new segment takes
+       over linearly over ~12 ms - a mid-swell re-anchor cannot step the
+       output (the old additive ghost doubled the level at re-anchor) */
+    if (gf > 0.0f) out = out * (1.0f - gf) + r->g_hold * gf;
     r->last_rv = out;
     return out;
 }
