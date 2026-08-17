@@ -26,6 +26,11 @@ private:
         float v[9];   /* mix rev space tone grain duck trig predelay mode */
     };
     static const FactoryPreset factoryPresets[5];
+    /* knob positions the UI jumps to when the user picks mode 1..5:
+       {mix, rev, space, tone, grain, duck, trig, predelay} - the mode
+       switch then returns to 0 (manual) so every knob stays editable;
+       the settings live only in this plugin instance until saved. */
+    static const float modeKnobPresets[5][8];
 
     void setPage(int page);
     void setFocus(int slot);
@@ -36,6 +41,7 @@ private:
 
     void refreshPresetList();
     void applyFactoryPreset(int index);
+    void applyModeToKnobs(int mode);
     void saveUserPreset();
     void deleteUserPreset();
     void loadUserPreset(const juce::File& file);

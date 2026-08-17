@@ -326,8 +326,22 @@ ReversonAudioProcessorEditor::factoryPresets[5] = {
     { "mbv",      { 0.60f, 0.85f, 0.55f, 0.50f, 0.60f, 0.10f, 0.35f, 0.10f, 0.0f } },
     { "diiv",     { 0.55f, 0.25f, 0.60f, 0.50f, 0.40f, 0.50f, 0.55f, 0.00f, 0.0f } },
     { "slowdive", { 0.70f, 0.35f, 0.85f, 0.45f, 0.55f, 0.30f, 0.70f, 0.00f, 0.0f } },
-    { "Wash",     { 0.60f, 0.80f, 0.55f, 0.50f, 0.60f, 0.30f, 0.35f, 0.10f, 0.2f } },
-    { "Gated",    { 0.70f, 0.95f, 0.45f, 0.50f, 0.50f, 0.10f, 0.35f, 0.00f, 0.6f } }
+    { "Wash",     { 0.60f, 0.60f, 0.75f, 0.45f, 0.55f, 0.35f, 0.35f, 0.05f, 0.0f } },
+    { "Gated",    { 0.65f, 0.95f, 0.35f, 0.50f, 0.40f, 0.20f, 0.40f, 0.00f, 0.0f } }
+};
+
+/* Mode 1..5 -> the knob positions that produce that character (the mode
+   switch then returns to 0/manual so the user can keep tweaking; the
+   values live only in this instance). Aligned with the core REV_MODE
+   tables: Wash = soft gate + long tail, Reverse = high rev mix, Gated =
+   tight gate + close, Shoegaze = medium wash, Space = huge + dry. */
+const float ReversonAudioProcessorEditor::modeKnobPresets[5][8] = {
+    /*   mix   rev  space  tone  grain  duck  trig predelay */
+    { 0.60f, 0.60f, 0.75f, 0.45f, 0.55f, 0.35f, 0.35f, 0.05f },   /* Wash */
+    { 0.70f, 0.90f, 0.55f, 0.45f, 0.50f, 0.30f, 0.45f, 0.00f },   /* Reverse */
+    { 0.65f, 0.95f, 0.35f, 0.50f, 0.40f, 0.20f, 0.40f, 0.00f },   /* Gated */
+    { 0.70f, 0.75f, 0.65f, 0.50f, 0.60f, 0.40f, 0.35f, 0.05f },   /* Shoegaze */
+    { 0.55f, 0.45f, 0.85f, 0.40f, 0.60f, 0.10f, 0.35f, 0.10f }    /* Space */
 };
 
 ReversonAudioProcessorEditor::ReversonAudioProcessorEditor(ReversonAudioProcessor& p)
@@ -425,10 +439,23 @@ void ReversonAudioProcessorEditor::setPage(int page) {
         bool has = (ids[currentPage][i][0] != '\0');
         knobs[i].setEnabled(has);
         if (has) {
-            if (strcmp(ids[currentPage][i], "mode") == 0)
+            if (strcmp(ids[currentPage][i], "mode") == 0) {
                 knobs[i].setRange(0.0, 1.0, 0.2);   /* 5-position switch */
-            else
+                /* picking a mode jumps the knobs to that character's preset
+                   positions and returns to manual (mode=0) so everything
+                   stays editable - changes live only in this instance */
+                knobs[i].onValueChange = [this] {
+                    auto* pm = processor.apvts.getRawParameterValue("mode");
+                    if (pm == nullptr) return;
+                    int mi = (int)(pm->load() * 5.0f + 0.5f);
+                    if (mi >= 1 && mi <= 5) applyModeToKnobs(mi);
+                };
+            } else {
                 knobs[i].setRange(0.0, 1.0, 0.001);
+                knobs[i].onValueChange = [this, i] {
+                    if (knobs[i].isMouseButtonDown()) setFocus(i);
+                };
+            }
             attachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
                 processor.apvts, ids[currentPage][i], knobs[i]);
             if (auto* p = processor.apvts.getParameter(ids[currentPage][i]))
@@ -628,6 +655,21 @@ void ReversonAudioProcessorEditor::applyFactoryPreset(int index) {
     if (auto* param = processor.apvts.getParameter("bypass"))
         param->setValueNotifyingHost(0.0f);
     presetStrip->setCurrent(factoryPresets[index].name, index + 1);
+    repaint();
+}
+
+void ReversonAudioProcessorEditor::applyModeToKnobs(int mode) {
+    if (mode < 1 || mode > 5) return;
+    const float* v = modeKnobPresets[mode - 1];
+    static const char* knobIds[8] = { "mix", "rev", "space", "tone",
+                                      "grain", "duck", "trig", "predelay" };
+    for (int i = 0; i < 8; ++i)
+        if (auto* param = processor.apvts.getParameter(knobIds[i]))
+            param->setValueNotifyingHost(v[i]);
+    /* return to manual: mode=0 (Off) so every knob stays editable; the
+       settings live only in this plugin instance until the user saves */
+    if (auto* param = processor.apvts.getParameter("mode"))
+        param->setValueNotifyingHost(0.0f);
     repaint();
 }
 
