@@ -37,6 +37,8 @@ struct Reverson {
     float duck_gain_sm;
     float env_peak;             /* slow peak of input env for level-independent duck/gate */
     float wet_lp_l, wet_lp_r;
+    float wet_sm_l, wet_sm_r;        /* fixed ~8 kHz wet smoothing state */
+    float wet_sm_coef;               /* fixed smoothing coefficient */
     float wet_hp_l, wet_hp_r;        /* one-pole HPF state */
     float wet_hp_x1_l, wet_hp_x1_r;  /* HPF previous input */
     float hp_a;                      /* HPF coefficient (init-time) */
@@ -161,6 +163,8 @@ Reverson* Reverson_init(void* mem, uint32_t mem_size, float sample_rate) {
     r->hp_a = rev_hp_coeff(sample_rate);
     r->wet_hp_l = 0.0f; r->wet_hp_r = 0.0f;
     r->wet_hp_x1_l = 0.0f; r->wet_hp_x1_r = 0.0f;
+    r->wet_sm_l = 0.0f; r->wet_sm_r = 0.0f;
+    r->wet_sm_coef = rev_coeff_from_tc(sample_rate / 6000.0f);  /* ~6 kHz one-pole */
     r->duck_gain_sm = 1.0f;
     r->bed = 0.0f;      /* pure reverse swell by default; bed adds the FDN bed */
     r->rev_mix = 0.0f;
@@ -230,6 +234,8 @@ void Reverson_reset(Reverson* r) {
     r->look_i = 0u;
     r->wet_lp_l = 0.0f;
     r->wet_lp_r = 0.0f;
+    r->wet_sm_l = 0.0f;
+    r->wet_sm_r = 0.0f;
     r->wet_hp_l = 0.0f;
     r->wet_hp_r = 0.0f;
     r->wet_hp_x1_l = 0.0f;
@@ -637,6 +643,16 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
         wet_l += sw_l;
         wet_r += sw_r;
     }
+
+    /* fixed wet smoothing lowpass BEFORE the tone lp: the reversed attack
+       tail of a freshly re-anchored segment is a fast high-frequency decay
+       (measured ~5-11 kHz ripple through the diffuser = the micro-crackle
+       on every retrigger). A fixed ~6 kHz one-pole smooths it regardless
+       of the tone knob, so even bright settings cannot slam the transient. */
+    r->wet_sm_l += (wet_l - r->wet_sm_l) * r->wet_sm_coef;
+    r->wet_sm_r += (wet_r - r->wet_sm_r) * r->wet_sm_coef;
+    wet_l = r->wet_sm_l;
+    wet_r = r->wet_sm_r;
 
     float tc = 0.05f + 0.9f * r->cur.tone;
     r->wet_lp_l += (wet_l - r->wet_lp_l) * tc;

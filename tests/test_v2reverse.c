@@ -123,6 +123,63 @@ int main(void) {
         CHECK(maxd < 0.05f);   /* no steps: the re-anchor was silent */
     }
 
+    /* (E) fast-picking crackle: rapid onsets (every 120 ms) in gated mode
+       must not produce TRUE clicks - a single-sample spike (this sample
+       jumps > 0.08 while the previous step was < 0.02). The reversed
+       attack tail of each re-anchored segment used to slam through the
+       diffuser as a broadband spike (fixed by the retrigger env rise +
+       the fixed ~6 kHz wet smoothing). */
+    {
+        Reverson_reset(r);
+        configure(r);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);   /* wet only */
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_GATE, 0.9f);
+        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.3f);
+        Reverson_set_param(r, REVERSON_PARAM_TRIG, 0.35f);
+        {
+            ReversonParams mp;
+            Reverson_mode(3, &mp);
+            Reverson_set_param(r, REVERSON_PARAM_DECAY, mp.decay);
+            Reverson_set_param(r, REVERSON_PARAM_TONE, mp.tone);
+            Reverson_set_param(r, REVERSON_PARAM_REVLEN, mp.revlen);
+            Reverson_set_param(r, REVERSON_PARAM_GATE, mp.gate);
+            Reverson_set_param(r, REVERSON_PARAM_SHAPE, mp.shape);
+            Reverson_set_param(r, REVERSON_PARAM_MOD, mp.mod);
+            Reverson_set_param(r, REVERSON_PARAM_SAT, mp.sat);
+            Reverson_set_param(r, REVERSON_PARAM_WIDTH, mp.width);
+            Reverson_set_param(r, REVERSON_PARAM_DENSITY, mp.density);
+            Reverson_set_param(r, REVERSON_PARAM_BASS, mp.bass);
+            Reverson_set_param(r, REVERSON_PARAM_DIFFUSION, mp.diffusion);
+        }
+        for (int i = 0; i < 44100; ++i) Reverson_process(r, 0.0f, &l, &rr);
+        float prev2 = 0.0f, prev = 0.0f;
+        int clicks = 0;
+        for (int i = 0; i < 352800; ++i) {   /* 8 s of fast picking */
+            double t = (double)i / 44100.0;
+            double pos = fmod(t, 0.12);
+            float x;
+            if (pos < 0.025) {
+                float e = (float)exp(-pos * 120.0);
+                x = e * (float)(sin(2.0 * 3.14159265358979323846 * 220.0 * t)
+                                + 0.5 * sin(2.0 * 3.14159265358979323846 * 330.0 * t)
+                                + 0.3 * sin(2.0 * 3.14159265358979323846 * 440.0 * t));
+            } else {
+                x = 0.0f;
+            }
+            x += 0.08f * (float)sin(2.0 * 3.14159265358979323846 * 110.0 * t);
+            x *= 0.6f;
+            Reverson_process(r, x, &l, &rr);
+            float d1 = (float)fabs(l - prev);
+            float d2 = (float)fabs(prev - prev2);
+            if (d1 > 0.08f && d2 < 0.02f) clicks++;   /* true single-sample spike */
+            prev2 = prev;
+            prev = l;
+            CHECK(is_finite_f(l) && is_finite_f(rr));
+        }
+        CHECK(clicks == 0);   /* no broadband spikes from re-anchoring */
+    }
+
     free(mem);
     if (fails == 0) { printf("test_v2reverse PASS\n"); return 0; }
     printf("test_v2reverse FAILED (%d)\n", fails);

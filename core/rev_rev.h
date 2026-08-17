@@ -67,12 +67,17 @@ typedef struct {
        positions + envelope levels) and is faded to 0 over ~12 ms while the
        new segment fades in - a true content crossfade. A scalar-level
        ghost (old output value held constant) left a decaying DC thump on
-       the audio = crackle. */
+       the audio = crackle. The new voices also start their envelopes at 0
+       and rise over the same fade window (retrig_rise), so the newly
+       anchored content (which may start with the attack transient) cannot
+       slam in at the kept envelope level. */
     float g_fade;      /* 1 -> 0 */
     float g_fade_inc;
     uint32_t g_anchor; /* old read-head anchor captured at the retrigger */
     uint32_t g_pos[REV_REV_MAX_VOICES];
     float g_env[REV_REV_MAX_VOICES];
+    float retrig_inc;  /* fast env rise for the retrigger fade window */
+    uint32_t retrig_left;  /* samples left in the fast rise */
 } RevRev;
 
 void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rate);

@@ -22,6 +22,8 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
     r->g_fade = 0.0f;
     r->g_fade_inc = 1.0f / (0.012f * sample_rate);   /* ~12 ms retrigger crossfade */
     r->g_anchor = 0u;
+    r->retrig_inc = 1.0f;
+    r->retrig_left = 0u;
     r->shape = 1;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
@@ -41,6 +43,7 @@ void rev_rev_clear(RevRev* r) {
     r->norm_target = 1.0f;
     r->g_fade = 0.0f;
     r->g_anchor = 0u;
+    r->retrig_left = 0u;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
         r->v_env[v] = 0.0f;
@@ -74,6 +77,7 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     int fresh = (r->v_env[0] == 0.0f && r->v_cross[0] == 0.0f);
     if (fresh) {
         r->g_fade = 0.0f;
+        r->retrig_left = 0u;
     } else {
         r->g_fade = 1.0f;
         r->g_anchor = r->anchor;
@@ -81,6 +85,15 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
             r->g_pos[v] = r->v_pos[v];
             r->g_env[v] = r->v_env[v];
         }
+        /* the new segment starts its envelope at 0 and rises over the
+           retrigger window: the re-anchored content (which may begin with
+           the attack transient) cannot slam in at the kept envelope level.
+           40 ms: long enough to smooth the reversed attack-tail ripple
+           through the diffuser, short enough not to soften the re-pick. */
+        uint32_t fade = (uint32_t)(int)(0.040f * r->sample_rate);
+        if (fade < 2u) fade = 2u;
+        r->retrig_inc = 1.0f / (float)fade;
+        r->retrig_left = fade;
     }
     if (seg_len < 2u) seg_len = 2u;
     if (seg_len > r->buf_len) seg_len = r->buf_len; /* oversized segment cannot alias the buffer */
@@ -114,10 +127,10 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
     r->norm_target = rev_clampf(0.5f / (r->seg_peak + 1e-6f), 0.1f, 3.0f);
     r->anchor = r->write_idx;
     uint32_t body = r->seg_len - r->cross_len;
-    /* smooth retrigger: keep the envelope if a swell is already playing so a
-       new onset re-anchors without a hard level reset (kills the wobble);
-       the anchor content jump is masked by the retrigger ghost (armed above
-       only when NOT fresh) */
+    /* smooth retrigger: keep the read positions staggered but start the
+       envelope from 0 when NOT fresh (the retrigger fade window rises it
+       fast while the old content fades out - the re-anchored content
+       cannot slam in at the kept level) */
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         if (v < r->n_voices) {
             /* stagger via float math (v*seg_len < 2^24: exact in float32; the
@@ -135,8 +148,11 @@ void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int sh
                     r->v_env[v] = (float)pos * r->env_inc;
                     if (r->v_env[v] > 1.0f) r->v_env[v] = 1.0f;
                 }
+            } else {
+                /* retrigger: rise from 0 over the fade window */
+                r->v_cross[v] = 0.0f;
+                r->v_env[v] = 0.0f;
             }
-            /* not fresh: keep v_env/v_cross and just re-anchor (smooth retrigger) */
         } else {
             r->v_pos[v] = 0u;
             r->v_env[v] = 0.0f;
@@ -164,6 +180,7 @@ float rev_rev_process(RevRev* r) {
         r->g_fade -= r->g_fade_inc;
         if (r->g_fade < 0.0f) r->g_fade = 0.0f;
     }
+    if (r->retrig_left > 0u) r->retrig_left--;
     /* Read heads are anchored at trigger time (r->anchor = write_idx then), so
        live recording does not move them; at wrap each v_pos resets to 0 and the
        segment LOOPS the same anchored material until the next trigger
@@ -187,8 +204,12 @@ float rev_rev_process(RevRev* r) {
             rev = rev * (1.0f - cp) + head * cp;
             env = env * (1.0f - cp); /* fall to 0 at the seam */
         } else {
-            /* segment body: swell rises toward 1 */
-            r->v_env[v] += r->env_inc;
+            /* segment body: swell rises toward 1. During the retrigger
+               fade window the rise is FAST (retrig_inc) so the re-anchored
+               content crossfades in at low level; after the window the
+               normal swell rise continues. */
+            float inc = (r->retrig_left > 0u) ? r->retrig_inc : r->env_inc;
+            r->v_env[v] += inc;
             if (r->v_env[v] > 1.0f) r->v_env[v] = 1.0f;
             env = r->v_env[v];
         }
