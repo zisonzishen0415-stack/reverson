@@ -441,19 +441,17 @@ void ReversonAudioProcessorEditor::setPage(int page) {
         if (has) {
             if (strcmp(ids[currentPage][i], "mode") == 0) {
                 knobs[i].setRange(0.0, 1.0, 0.2);   /* 5-position switch */
-                /* while dragging, the LCD shows the mode name normally;
-                   on RELEASE, the knobs jump to that character's preset
-                   positions and mode returns to manual (0) so everything
-                   stays editable - changes live only in this instance */
+                /* while the user turns the knob, the LCD shows the mode name
+                   live; when the knob settles (300 ms no change), the knobs
+                   jump to that character's preset positions and mode returns
+                   to manual (0). Debounce covers every input path (drag,
+                   wheel, keyboard, double-click) - onDragEnd only fired on
+                   mouse release and left the knob dead for the others. */
                 knobs[i].onValueChange = [this, i] {
                     if (knobs[i].isMouseButtonDown()) setFocus(i);
+                    armModeDebounce();
                 };
-                knobs[i].onDragEnd = [this] {
-                    auto* pm = processor.apvts.getRawParameterValue("mode");
-                    if (pm == nullptr) return;
-                    int mi = (int)(pm->load() * 5.0f + 0.5f);
-                    if (mi >= 1 && mi <= 5) applyModeToKnobs(mi);
-                };
+                knobs[i].onDragEnd = [this] { armModeDebounce(); };
             } else {
                 knobs[i].setRange(0.0, 1.0, 0.001);
                 knobs[i].onValueChange = [this, i] {
@@ -617,7 +615,21 @@ void ReversonAudioProcessorEditor::resized() {
                            presetRow.getWidth() - 32, 26);
 }
 
+void ReversonAudioProcessorEditor::armModeDebounce() {
+    /* ~300 ms of no change at 30 Hz timer = 9 ticks */
+    modeDebounceLeft = 9;
+}
+
 void ReversonAudioProcessorEditor::timerCallback() {
+    if (modeDebounceLeft > 0) {
+        if (--modeDebounceLeft == 0) {
+            auto* pm = processor.apvts.getRawParameterValue("mode");
+            if (pm != nullptr) {
+                int mi = (int)(pm->load() * 5.0f + 0.5f);
+                if (mi >= 1 && mi <= 5) applyModeToKnobs(mi);
+            }
+        }
+    }
     repaint();
 }
 

@@ -42,6 +42,7 @@ private:
     void refreshPresetList();
     void applyFactoryPreset(int index);
     void applyModeToKnobs(int mode);
+    void armModeDebounce();      /* restart the mode-release debounce timer */
     void saveUserPreset();
     void deleteUserPreset();
     void loadUserPreset(const juce::File& file);
@@ -67,6 +68,7 @@ private:
 
     int currentPage = 0;
     int focusedSlot = 0;
+    int modeDebounceLeft = 0;   /* timer ticks left before applying the mode */
     juce::Rectangle<int> pageHitRect;             /* LCD header click cycles page */
 
     static const char* ids[3][3];
