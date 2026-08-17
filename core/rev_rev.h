@@ -63,13 +63,16 @@ typedef struct {
     float voice_scale;
     int shape;
     /* retrigger ghost: when a fresh trigger re-anchors mid-swell, the OLD
-       playback level is held and faded to 0 over ~12 ms while the new
-       segment's envelope rises from 0 - the anchor/content jump is masked
-       (no step = no crackle). */
-    float last_rv;     /* previous sample's summed output (pre ghost) */
-    float g_hold;      /* old output level captured at the retrigger */
+       playback CONTINUES from its saved read heads (anchor + per-voice
+       positions + envelope levels) and is faded to 0 over ~12 ms while the
+       new segment fades in - a true content crossfade. A scalar-level
+       ghost (old output value held constant) left a decaying DC thump on
+       the audio = crackle. */
     float g_fade;      /* 1 -> 0 */
     float g_fade_inc;
+    uint32_t g_anchor; /* old read-head anchor captured at the retrigger */
+    uint32_t g_pos[REV_REV_MAX_VOICES];
+    float g_env[REV_REV_MAX_VOICES];
 } RevRev;
 
 void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rate);

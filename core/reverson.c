@@ -427,8 +427,12 @@ void Reverson_set_6knob(Reverson* r, float mix, float rev, float space,
 }
 
 static float rev_floor_of(const Reverson* r) {
-    float f = 1.0f - 0.65f * r->cur.gate;
-    if (f < 0.2f) f = 0.2f;
+    /* gate 0 -> floor 1.0 (continuous wash); gate 1 -> floor ~0.15
+       (gated: the swell closes tight between onsets). The old 1-0.65*gate
+       curve left a 0.35..0.4 floor at full gate - the swell never closed,
+       so gated sounded like a tremolo between onsets. */
+    float f = 1.0f - 0.85f * r->cur.gate;
+    if (f < 0.15f) f = 0.15f;
     return f;
 }
 
@@ -563,8 +567,19 @@ void Reverson_process_stereo(Reverson* r, float in_l, float in_r, float* out_l, 
                 r->rev_env -= r->rev_settle_inc;
                 if (r->rev_env <= 1.0f) { r->rev_env = 1.0f; r->rev_state = 3u; }
             } else if (r->rev_state == 3u) {
-                if (r->rev_hold_left > 0u) r->rev_hold_left--;
-                if (r->rev_hold_left == 0u) r->rev_state = 4u;
+                if (r->rev_hold_left > 0u) {
+                    r->rev_hold_left--;
+                } else if (rev_env_playing(&r->env)) {
+                    /* input still playing: keep the swell up instead of
+                       falling - a gated reverb must not pump like a
+                       tremolo on sustained notes. The hold only starts
+                       its fall once the input actually stops. */
+                    uint32_t keep = (uint32_t)(int)(0.20f * r->sample_rate);
+                    if (keep < 2u) keep = 2u;
+                    r->rev_hold_left = keep;
+                } else {
+                    r->rev_state = 4u;
+                }
             } else if (r->rev_state == 4u) {
                 r->rev_env -= r->rev_fall_inc;
                 if (r->rev_env <= floor) { r->rev_env = floor; r->rev_state = 0u; }

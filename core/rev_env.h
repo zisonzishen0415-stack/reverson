@@ -22,6 +22,10 @@ void rev_env_set_thresh(RevEnv* e, float rel);
 /* feed one input sample; updates envelope and onset flag */
 void rev_env_process(RevEnv* e, float x);
 float rev_env_value(const RevEnv* e);
+/* 1 while the input is above the onset threshold (playing), 0 otherwise.
+   The hold state machine uses this to keep a gated swell up while the
+   input continues (no tremolo on sustained notes). */
+int rev_env_playing(const RevEnv* e);
 /* one-sample flag, recomputed on every rev_env_process call: the caller must
    read it each sample (it is not latched until cleared) */
 int rev_env_onset(const RevEnv* e);

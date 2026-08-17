@@ -19,15 +19,16 @@ void rev_rev_init(RevRev* r, float* mem, uint32_t buf_len_pow2, float sample_rat
     r->cross_len = 1u;
     r->cross_inc = 1.0f;
     r->pre_off = 0u;
-    r->last_rv = 0.0f;
-    r->g_hold = 0.0f;
     r->g_fade = 0.0f;
     r->g_fade_inc = 1.0f / (0.012f * sample_rate);   /* ~12 ms retrigger crossfade */
+    r->g_anchor = 0u;
     r->shape = 1;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
         r->v_env[v] = 0.0f;
         r->v_cross[v] = 0.0f;
+        r->g_pos[v] = 0u;
+        r->g_env[v] = 0.0f;
     }
 }
 
@@ -38,13 +39,14 @@ void rev_rev_clear(RevRev* r) {
     r->seg_peak = 0.0f;
     r->norm_gain = 1.0f;
     r->norm_target = 1.0f;
-    r->last_rv = 0.0f;
-    r->g_hold = 0.0f;
     r->g_fade = 0.0f;
+    r->g_anchor = 0u;
     for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
         r->v_pos[v] = 0u;
         r->v_env[v] = 0.0f;
         r->v_cross[v] = 0.0f;
+        r->g_pos[v] = 0u;
+        r->g_env[v] = 0.0f;
     }
     /* seg_len/cross_len/env_inc/voice_scale are intentionally not reset here:
        the next trigger (re)sets them. */
@@ -63,13 +65,23 @@ void rev_rev_set_preoff(RevRev* r, uint32_t samples) {
 
 /* Division here is control-rate (once per trigger), not per-sample. */
 void rev_rev_trigger(RevRev* r, uint32_t seg_len, uint32_t cross_samples, int shape) {
-    /* retrigger ghost: mask the anchor jump. Only armed on a MID-SWELL
-       retrigger (fresh trigger: nothing playing, nothing to mask); the OLD
-       output level is held and the new segment crossfades in over ~12 ms,
-       so re-anchoring mid-swell cannot step the output. */
+    /* retrigger ghost: mask the anchor jump with a TRUE CONTENT crossfade.
+       Only armed on a MID-SWELL retrigger (fresh trigger: nothing playing,
+       nothing to mask). The OLD read heads (anchor + per-voice positions +
+       envelope levels) are saved so the old segment KEEPS PLAYING while it
+       fades out over ~12 ms as the new segment fades in - a scalar-level
+       ghost would leave a decaying DC thump on the audio (crackle). */
     int fresh = (r->v_env[0] == 0.0f && r->v_cross[0] == 0.0f);
-    r->g_hold = r->last_rv;
-    r->g_fade = fresh ? 0.0f : 1.0f;
+    if (fresh) {
+        r->g_fade = 0.0f;
+    } else {
+        r->g_fade = 1.0f;
+        r->g_anchor = r->anchor;
+        for (uint32_t v = 0; v < REV_REV_MAX_VOICES; ++v) {
+            r->g_pos[v] = r->v_pos[v];
+            r->g_env[v] = r->v_env[v];
+        }
+    }
     if (seg_len < 2u) seg_len = 2u;
     if (seg_len > r->buf_len) seg_len = r->buf_len; /* oversized segment cannot alias the buffer */
     /* live-overwrite guard: the write head keeps recording while the
@@ -142,10 +154,10 @@ void rev_rev_write(RevRev* r, float x) {
 }
 
 float rev_rev_process(RevRev* r) {
-    /* retrigger ghost: the previous output level is HELD and crossfaded into
-       the freshly re-anchored segment over ~12 ms (true crossfade: at the
-       retrigger sample the output IS the held old level, so the anchor jump
-       cannot step the output; the new content takes over smoothly) */
+    /* retrigger ghost: the OLD playback stream continues from its saved
+       read heads (g_anchor + g_pos) and fades to 0 over ~12 ms while the
+       freshly re-anchored segment fades in - a true content crossfade, so
+       the anchor jump cannot step the output and no DC thump remains */
     float gf = 0.0f;
     if (r->g_fade > 0.0f) {
         gf = r->g_fade;
@@ -197,11 +209,23 @@ float rev_rev_process(RevRev* r) {
 
     r->norm_gain += (r->norm_target - r->norm_gain) * r->norm_coef;
     float out = sum * r->voice_scale * r->norm_gain;
-    /* true crossfade with the held old level: at the retrigger sample (gf=1)
-       the output IS the old level (continuous), then the new segment takes
-       over linearly over ~12 ms - a mid-swell re-anchor cannot step the
-       output (the old additive ghost doubled the level at re-anchor) */
-    if (gf > 0.0f) out = out * (1.0f - gf) + r->g_hold * gf;
-    r->last_rv = out;
+    /* true content crossfade with the old stream: at the retrigger sample
+       (gf=1) the output IS the old playback (continuous), then the new
+       segment takes over linearly over ~12 ms */
+    if (gf > 0.0f) {
+        float ghost = 0.0f;
+        for (uint32_t v = 0; v < r->n_voices; ++v) {
+            uint32_t gidx = (r->g_anchor - 1u - r->pre_off - r->g_pos[v]) & r->mask;
+            float grev = r->buf[gidx];
+            float genv = r->g_env[v];
+            if (r->shape == 2) genv = genv * genv;
+            else if (r->shape == 3) genv = genv * genv * genv;
+            else if (r->shape == 4) { float e2 = genv * genv; genv = e2 * e2; }
+            ghost += grev * genv;
+            r->g_pos[v]++;
+            if (r->g_pos[v] >= r->seg_len) r->g_pos[v] = 0u;
+        }
+        out = out * (1.0f - gf) + (ghost * r->voice_scale) * gf;
+    }
     return out;
 }

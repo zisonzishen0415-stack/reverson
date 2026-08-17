@@ -85,6 +85,17 @@ int main(void) {
     rev_env_set_thresh(&e, 0.35f);
     CHECK(e.onset_thresh == 0.35f);
 
+    /* rev_env_playing: 1 while above threshold, 0 on silence */
+    rev_env_init(&e, 44100.0f);
+    CHECK(rev_env_playing(&e) == 0);
+    for (int i = 0; i < 200; ++i) rev_env_process(&e, 1.0f);
+    CHECK(rev_env_playing(&e) == 1);
+    for (int i = 0; i < 4410; ++i) rev_env_process(&e, 0.0f);   /* ~100 ms gap */
+    CHECK(rev_env_playing(&e) == 0);
+    /* re-trigger after the gap */
+    for (int i = 0; i < 200; ++i) rev_env_process(&e, 1.0f);
+    CHECK(rev_env_playing(&e) == 1);
+
     if (fails == 0) { printf("test_env PASS\n"); return 0; }
     printf("test_env FAILED (%d)\n", fails);
     return 1;

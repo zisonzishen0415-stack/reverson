@@ -37,4 +37,5 @@ void rev_env_process(RevEnv* e, float x) {
     e->was_playing = playing;
 }
 float rev_env_value(const RevEnv* e) { return e->env; }
+int rev_env_playing(const RevEnv* e) { return e->was_playing; }
 int rev_env_onset(const RevEnv* e) { return e->onset; }

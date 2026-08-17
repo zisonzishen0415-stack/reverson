@@ -364,6 +364,32 @@ int main(void) {
         CHECK(pk < 0.96f);         /* full-scale: the lookahead limiter holds even the first crest sample */
     }
 
+    /* gated swell must HOLD while the input keeps playing (a fixed hold +
+       fall would pump like a tremolo on sustained notes): with the gate at
+       max and a continuous note, the swell envelope stays near 1.0 the whole
+       time instead of cycling up and down. */
+    {
+        Reverson_reset(r);
+        Reverson_set_param(r, REVERSON_PARAM_MIX, 1.0f);
+        Reverson_set_param(r, REVERSON_PARAM_DUCK, 0.0f);
+        Reverson_set_param(r, REVERSON_PARAM_GATE, 0.9f);   /* fully gated */
+        Reverson_set_param(r, REVERSON_PARAM_DENSITY, 0.3f);/* short hold */
+        Reverson_set_param(r, REVERSON_PARAM_TRIG, 0.35f);
+        Reverson_set_bed(r, 0.0f);
+        float l, rr, env_min = 2.0f, env_max = -1.0f;
+        for (int i = 0; i < 88200; ++i) {                   /* 2 s sustained note */
+            float x = 0.5f * (float)sin(2.0 * 3.14159265358979323846 * 110.0 * (double)i / 44100.0);
+            Reverson_process(r, x, &l, &rr);
+            float e = Reverson_test_env(r);
+            if (e < env_min) env_min = e;
+            if (e > env_max) env_max = e;
+        }
+        /* first ~0.35 s is the rise, so measure the second half: the swell
+           must NOT fall back to the floor while the note continues */
+        CHECK(env_max > 0.95f);
+        CHECK(env_min > 0.5f);      /* never closed to the floor during the note */
+    }
+
     free(mem);
     if (fails == 0) { printf("test_core PASS\n"); return 0; }
     printf("test_core FAILED (%d)\n", fails);
