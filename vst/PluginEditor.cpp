@@ -441,10 +441,14 @@ void ReversonAudioProcessorEditor::setPage(int page) {
         if (has) {
             if (strcmp(ids[currentPage][i], "mode") == 0) {
                 knobs[i].setRange(0.0, 1.0, 0.2);   /* 5-position switch */
-                /* picking a mode jumps the knobs to that character's preset
-                   positions and returns to manual (mode=0) so everything
+                /* while dragging, the LCD shows the mode name normally;
+                   on RELEASE, the knobs jump to that character's preset
+                   positions and mode returns to manual (0) so everything
                    stays editable - changes live only in this instance */
-                knobs[i].onValueChange = [this] {
+                knobs[i].onValueChange = [this, i] {
+                    if (knobs[i].isMouseButtonDown()) setFocus(i);
+                };
+                knobs[i].onDragEnd = [this] {
                     auto* pm = processor.apvts.getRawParameterValue("mode");
                     if (pm == nullptr) return;
                     int mi = (int)(pm->load() * 5.0f + 0.5f);
